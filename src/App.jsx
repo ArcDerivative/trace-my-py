@@ -1,188 +1,89 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import Editor from '@monaco-editor/react'
+import mermaid from 'mermaid'
+import { runAndTrace } from './tracer'
 
-const TRACER_CODE = `
-import sys
-import json
-
-trace_data = {}
-var_assignments = {}  # var_name -> [(line, value, scope_chain), ...]
-assignment_lines = {}  # var_name -> [line_numbers where assigned]
-prev_vars = {}
-frame_prev_line = {}
-
-def is_user_var(name):
-    if name.startswith('_'):
-        return False
-    if name in ('tracer', 'run_with_trace', 'trace_data', 'prev_vars', 'is_user_var', 'safe_repr', 'user_code', 'result', 'json', 'sys', 'get_scope_chain', 'is_function', 'var_assignments', 'capture_changes', 'frame_prev_line', 'assignment_lines'):
-        return False
-    return True
-
-def is_function(val):
-    return callable(val) and not isinstance(val, type)
-
-def safe_repr(val):
-    try:
-        return repr(val)
-    except:
-        return '<unrepresentable>'
-
-def get_scope_chain(frame):
-    chain = []
-    f = frame
-    while f is not None:
-        if f.f_code.co_filename == '<string>':
-            name = f.f_code.co_name
-            first_line = f.f_code.co_firstlineno
-            if name == '<module>':
-                chain.append(('global', 0))
-            else:
-                chain.append((name, first_line))
-        f = f.f_back
-    chain.reverse()
-    return chain
-
-def capture_changes(frame, line_no):
-    global prev_vars
-    
-    current_vars = {}
-    
-    for k, v in frame.f_locals.items():
-        if is_user_var(k) and not is_function(v):
-            current_vars[k] = safe_repr(v)
-    
-    for k, v in frame.f_globals.items():
-        if is_user_var(k) and not is_function(v):
-            if k not in current_vars:
-                current_vars[k] = safe_repr(v)
-    
-    for k, v_repr in current_vars.items():
-        prev_repr = prev_vars.get(k)
-        
-        if prev_repr is None or prev_repr != v_repr:
-            # Original trace_data format
-            if k not in trace_data:
-                trace_data[k] = []
-            trace_data[k].append({'line': line_no, 'value': v_repr})
-            
-            # Track all assignments per variable
-            scope_chain = get_scope_chain(frame)
-            if k not in var_assignments:
-                var_assignments[k] = []
-                assignment_lines[k] = []
-            var_assignments[k].append((line_no, v_repr, scope_chain))
-            assignment_lines[k].append(line_no)
-            
-            prev_vars[k] = v_repr
-
-def tracer(frame, event, arg):
-    global frame_prev_line
-    
-    if frame.f_code.co_filename != '<string>':
-        return tracer
-    
-    frame_id = id(frame)
-    
-    if event == 'line':
-        if frame_id in frame_prev_line:
-            capture_changes(frame, frame_prev_line[frame_id])
-        frame_prev_line[frame_id] = frame.f_lineno
-    
-    elif event == 'return':
-        if frame_id in frame_prev_line:
-            capture_changes(frame, frame_prev_line[frame_id])
-            del frame_prev_line[frame_id]
-    
-    return tracer
-
-def run_with_trace(code):
-    global trace_data, prev_vars, var_assignments, frame_prev_line, assignment_lines
-    trace_data = {}
-    var_assignments = {}
-    assignment_lines = {}
-    prev_vars = {}
-    frame_prev_line = {}
-    
-    sys.settrace(tracer)
-    try:
-        exec(code, {'__name__': '__main__', '__builtins__': __builtins__})
-    finally:
-        sys.settrace(None)
-    
-    # Build assignment_map: for each line, include ALL values for that variable
-    formatted_map = {}
-    for var_name, assignments in var_assignments.items():
-        # Get all (line, value) pairs for this variable
-        all_values = [(line, val) for line, val, scope in assignments]
-        
-        for line_no, value, scope_chain in assignments:
-            formatted_map[line_no] = [
-                var_name,
-                scope_chain,
-                all_values  # ALL assignments to this variable
-            ]
-    
-    return json.dumps({
-        'trace_data': trace_data,
-        'assignment_map': formatted_map
-    })
-`
+mermaid.initialize({ startOnLoad: false, theme: 'dark' })
 
 function App() {
   const [output, setOutput] = useState('')
-  const [traceData, setTraceData] = useState({})
+  const [variableName, setVariableName] = useState('')
+  const [allTraceData, setAllTraceData] = useState({})
   const [running, setRunning] = useState(false)
   const editorRef = useRef(null)
-  const pyodideRef = useRef(null)
+  const diagramRef = useRef(null)
+  const diagramIdRef = useRef(0)
 
   const handleEditorMount = (editor) => {
     editorRef.current = editor
   }
 
-  const runCode = async () => {
-    setRunning(true)
-    setOutput('')
-    setTraceData({})
+  const generateMermaid = (trace) => {
+    let mermaidStr = 'graph TD\n'
+
+    trace.forEach((v, i) => {
+      const nodeId = `N${i}`
+      const label = `${v.value} (line ${v.line}, ${v.function})`
+      mermaidStr += `${nodeId}["${label}"]\n`
+      if (i < trace.length - 1) {
+        mermaidStr += `${nodeId} --> N${i + 1}\n`
+      }
+    })
+
+    return mermaidStr
+  }
+
+  const renderDiagram = async (trace) => {
+    if (!diagramRef.current || !trace || trace.length === 0) {
+      if (diagramRef.current) {
+        diagramRef.current.innerHTML = '<p style="color: #666;">No trace data to display</p>'
+      }
+      return
+    }
+
+    const diagramDef = generateMermaid(trace)
+    diagramIdRef.current += 1
 
     try {
-      if (!pyodideRef.current) {
-        setOutput('Loading Python...\n')
-        const { loadPyodide } = await import('pyodide')
-        pyodideRef.current = await loadPyodide()
-      }
+      const { svg } = await mermaid.render(`diagram${diagramIdRef.current}`, diagramDef)
+      diagramRef.current.innerHTML = svg
+    } catch (err) {
+      console.error('Mermaid error:', err)
+      diagramRef.current.innerHTML = `<p style="color: red;">Diagram error: ${err.message}</p>`
+    }
+  }
 
-      const userCode = editorRef.current.getValue()
-      
-      let printOutput = ''
-      pyodideRef.current.setStdout({ batched: (text) => { printOutput += text + '\n' } })
-      pyodideRef.current.setStderr({ batched: (text) => { printOutput += 'Error: ' + text + '\n' } })
+  const handleRun = async () => {
+    setRunning(true)
+    setOutput('Loading Python...\n')
+    setAllTraceData({})
+    setVariableName('')
 
-      await pyodideRef.current.runPythonAsync(TRACER_CODE)
-      
-      const wrappedCode = `
-user_code = ${JSON.stringify(userCode)}
-result = run_with_trace(user_code)
-result
-`
-      const jsonString = await pyodideRef.current.runPythonAsync(wrappedCode)
-      const { trace_data: traceObj, assignment_map: assignMap } = JSON.parse(jsonString)
-      setTraceData(traceObj)
-      
+    try {
+      const code = editorRef.current.getValue()
+      const { output: progOutput, traceData, firstVar } = await runAndTrace(code)
+
+      setAllTraceData(traceData)
+
+      // Format output
       let traceOutput = '--- Program Output ---\n'
-      traceOutput += printOutput || '(no output)\n'
+      traceOutput += progOutput || '(no output)\n'
       traceOutput += '\n--- Variable Trace ---\n'
-      
-      for (const [varName, assignments] of Object.entries(traceObj)) {
+
+      for (const [varName, assignments] of Object.entries(traceData)) {
         traceOutput += `\n${varName}:\n`
         for (const a of assignments) {
-          traceOutput += `  Line ${a.line}: ${a.value}\n`
+          traceOutput += `  Line ${a.line} (${a.function}): ${a.value}\n`
         }
       }
-      
-      traceOutput += '\n--- Assignment Map ---\n'
-      traceOutput += JSON.stringify(assignMap, null, 2)
-      
+
       setOutput(traceOutput)
+
+      // Render diagram for first variable
+      if (firstVar && traceData[firstVar]) {
+        setVariableName(firstVar)
+        await renderDiagram(traceData[firstVar])
+      }
 
     } catch (err) {
       setOutput(prev => prev + 'Error: ' + err.message + '\n')
@@ -191,46 +92,60 @@ result
     setRunning(false)
   }
 
+  useEffect(() => {
+    if (variableName && allTraceData[variableName]) {
+      renderDiagram(allTraceData[variableName])
+    }
+  }, [variableName])
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', width: '100vw', padding: '1rem', boxSizing: 'border-box' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', width: '100vw', padding: '1rem', boxSizing: 'border-box', backgroundColor: '#1e1e1e', color: '#fff' }}>
       <h1 style={{ margin: '0 0 1rem 0', textAlign: 'center' }}>Python Tracer</h1>
-      
-      <div style={{ display: 'flex', flex: 1, gap: '1rem', minHeight: 0, width: '100%' }}>
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-          <button 
-            onClick={runCode} 
-            disabled={running}
-            style={{ padding: '0.5rem 1rem', marginBottom: '0.5rem', fontSize: '1rem', alignSelf: 'flex-start' }}
+
+      <div style={{ marginBottom: '1rem', display: 'flex', gap: '1rem', alignItems: 'center' }}>
+        <button
+          onClick={handleRun}
+          disabled={running}
+          style={{ padding: '0.5rem 1rem', fontSize: '1rem' }}
+        >
+          {running ? 'Running...' : 'Run & Trace'}
+        </button>
+        <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          Variable:
+          <select
+            value={variableName}
+            onChange={(e) => setVariableName(e.target.value)}
+            style={{ padding: '0.3rem', minWidth: '100px' }}
           >
-            {running ? 'Running...' : 'Run & Trace'}
-          </button>
-          <div style={{ flex: 1, border: '1px solid #333' }}>
-            <Editor
-              height="100%"
-              defaultLanguage="python"
-              defaultValue={`x = 1
-y = 5
+            {Object.keys(allTraceData).length === 0 && <option value="">--</option>}
+            {Object.keys(allTraceData).map(v => (
+              <option key={v} value={v}>{v}</option>
+            ))}
+          </select>
+        </label>
+      </div>
 
-def foo():
-    global x
-    x = x + y
-    k = 2
-
-foo()
-x = x + 1
-print(f"Final x = {x}")`}
-              theme="vs-dark"
-              onMount={handleEditorMount}
-            />
-          </div>
+      <div style={{ display: 'flex', flex: 1, gap: '1rem', minHeight: 0 }}>
+        {/* Editor */}
+        <div style={{ flex: 1, border: '1px solid #333' }}>
+          <Editor
+            height="100%"
+            defaultLanguage="python"
+            defaultValue={`x = 0
+for i in range(5):
+    x += i
+print(x)`}
+            theme="vs-dark"
+            onMount={handleEditorMount}
+          />
         </div>
 
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-          <h3 style={{ margin: '0 0 0.5rem 0' }}>Output</h3>
-          <pre style={{ 
-            flex: 1, 
-            backgroundColor: '#1e1e1e', 
-            padding: '1rem', 
+        {/* Output + Diagram */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          <pre style={{
+            flex: 1,
+            backgroundColor: '#2d2d2d',
+            padding: '1rem',
             margin: 0,
             overflow: 'auto',
             border: '1px solid #333',
@@ -238,8 +153,19 @@ print(f"Final x = {x}")`}
             fontSize: '0.9rem',
             lineHeight: '1.4'
           }}>
-            {output || 'Click "Run & Trace" to execute and trace your code'}
+            {output || 'Click "Run & Trace" to execute your code'}
           </pre>
+          <div
+            ref={diagramRef}
+            style={{
+              flex: 1,
+              border: '1px solid #333',
+              padding: '1rem',
+              overflow: 'auto',
+              backgroundColor: '#fff',
+              minHeight: '200px'
+            }}
+          />
         </div>
       </div>
     </div>
