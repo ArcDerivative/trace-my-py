@@ -6,45 +6,102 @@ import sys
 import json
 
 trace_data = {}
-prev_globals = {}
+var_assignments = {}  # var_name -> [(line, value, scope_chain), ...]
+assignment_lines = {}  # var_name -> [line_numbers where assigned]
+prev_vars = {}
+frame_prev_line = {}
 
 def is_user_var(name):
     if name.startswith('_'):
         return False
-    if name in ('tracer', 'run_with_trace', 'trace_data', 'prev_globals', 'is_user_var', 'safe_repr', 'user_code', 'result', 'json', 'sys'):
+    if name in ('tracer', 'run_with_trace', 'trace_data', 'prev_vars', 'is_user_var', 'safe_repr', 'user_code', 'result', 'json', 'sys', 'get_scope_chain', 'is_function', 'var_assignments', 'capture_changes', 'frame_prev_line', 'assignment_lines'):
         return False
     return True
 
+def is_function(val):
+    return callable(val) and not isinstance(val, type)
+
 def safe_repr(val):
     try:
-        r = repr(val)
-        # Keep it JSON-safe
-        return r
+        return repr(val)
     except:
         return '<unrepresentable>'
 
+def get_scope_chain(frame):
+    chain = []
+    f = frame
+    while f is not None:
+        if f.f_code.co_filename == '<string>':
+            name = f.f_code.co_name
+            first_line = f.f_code.co_firstlineno
+            if name == '<module>':
+                chain.append(('global', 0))
+            else:
+                chain.append((name, first_line))
+        f = f.f_back
+    chain.reverse()
+    return chain
+
+def capture_changes(frame, line_no):
+    global prev_vars
+    
+    current_vars = {}
+    
+    for k, v in frame.f_locals.items():
+        if is_user_var(k) and not is_function(v):
+            current_vars[k] = safe_repr(v)
+    
+    for k, v in frame.f_globals.items():
+        if is_user_var(k) and not is_function(v):
+            if k not in current_vars:
+                current_vars[k] = safe_repr(v)
+    
+    for k, v_repr in current_vars.items():
+        prev_repr = prev_vars.get(k)
+        
+        if prev_repr is None or prev_repr != v_repr:
+            # Original trace_data format
+            if k not in trace_data:
+                trace_data[k] = []
+            trace_data[k].append({'line': line_no, 'value': v_repr})
+            
+            # Track all assignments per variable
+            scope_chain = get_scope_chain(frame)
+            if k not in var_assignments:
+                var_assignments[k] = []
+                assignment_lines[k] = []
+            var_assignments[k].append((line_no, v_repr, scope_chain))
+            assignment_lines[k].append(line_no)
+            
+            prev_vars[k] = v_repr
+
 def tracer(frame, event, arg):
-    global prev_globals
+    global frame_prev_line
+    
+    if frame.f_code.co_filename != '<string>':
+        return tracer
+    
+    frame_id = id(frame)
     
     if event == 'line':
-        line_no = frame.f_lineno
-        
-        current_globals = {k: safe_repr(v) for k, v in frame.f_globals.items() if is_user_var(k)}
-        
-        for k, v in current_globals.items():
-            if k not in prev_globals or prev_globals[k] != v:
-                if k not in trace_data:
-                    trace_data[k] = []
-                trace_data[k].append({'line': line_no, 'value': v})
-        
-        prev_globals = dict(current_globals)
+        if frame_id in frame_prev_line:
+            capture_changes(frame, frame_prev_line[frame_id])
+        frame_prev_line[frame_id] = frame.f_lineno
+    
+    elif event == 'return':
+        if frame_id in frame_prev_line:
+            capture_changes(frame, frame_prev_line[frame_id])
+            del frame_prev_line[frame_id]
     
     return tracer
 
 def run_with_trace(code):
-    global trace_data, prev_globals
+    global trace_data, prev_vars, var_assignments, frame_prev_line, assignment_lines
     trace_data = {}
-    prev_globals = {}
+    var_assignments = {}
+    assignment_lines = {}
+    prev_vars = {}
+    frame_prev_line = {}
     
     sys.settrace(tracer)
     try:
@@ -52,7 +109,23 @@ def run_with_trace(code):
     finally:
         sys.settrace(None)
     
-    return json.dumps(trace_data)
+    # Build assignment_map: for each line, include ALL values for that variable
+    formatted_map = {}
+    for var_name, assignments in var_assignments.items():
+        # Get all (line, value) pairs for this variable
+        all_values = [(line, val) for line, val, scope in assignments]
+        
+        for line_no, value, scope_chain in assignments:
+            formatted_map[line_no] = [
+                var_name,
+                scope_chain,
+                all_values  # ALL assignments to this variable
+            ]
+    
+    return json.dumps({
+        'trace_data': trace_data,
+        'assignment_map': formatted_map
+    })
 `
 
 function App() {
@@ -84,22 +157,17 @@ function App() {
       pyodideRef.current.setStdout({ batched: (text) => { printOutput += text + '\n' } })
       pyodideRef.current.setStderr({ batched: (text) => { printOutput += 'Error: ' + text + '\n' } })
 
-      // Load the tracer
       await pyodideRef.current.runPythonAsync(TRACER_CODE)
       
-      // Run user code with tracing - returns JSON string
       const wrappedCode = `
 user_code = ${JSON.stringify(userCode)}
 result = run_with_trace(user_code)
 result
 `
       const jsonString = await pyodideRef.current.runPythonAsync(wrappedCode)
-      
-      // Parse the JSON string
-      const traceObj = JSON.parse(jsonString)
+      const { trace_data: traceObj, assignment_map: assignMap } = JSON.parse(jsonString)
       setTraceData(traceObj)
       
-      // Format output
       let traceOutput = '--- Program Output ---\n'
       traceOutput += printOutput || '(no output)\n'
       traceOutput += '\n--- Variable Trace ---\n'
@@ -110,6 +178,9 @@ result
           traceOutput += `  Line ${a.line}: ${a.value}\n`
         }
       }
+      
+      traceOutput += '\n--- Assignment Map ---\n'
+      traceOutput += JSON.stringify(assignMap, null, 2)
       
       setOutput(traceOutput)
 
@@ -125,7 +196,6 @@ result
       <h1 style={{ margin: '0 0 1rem 0', textAlign: 'center' }}>Python Tracer</h1>
       
       <div style={{ display: 'flex', flex: 1, gap: '1rem', minHeight: 0, width: '100%' }}>
-        {/* Editor panel */}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
           <button 
             onClick={runCode} 
@@ -144,6 +214,7 @@ y = 5
 def foo():
     global x
     x = x + y
+    k = 2
 
 foo()
 x = x + 1
@@ -154,7 +225,6 @@ print(f"Final x = {x}")`}
           </div>
         </div>
 
-        {/* Output panel */}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
           <h3 style={{ margin: '0 0 0.5rem 0' }}>Output</h3>
           <pre style={{ 
