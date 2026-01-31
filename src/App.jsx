@@ -36,7 +36,7 @@ function App() {
   const renderDiagram = async (trace) => {
     if (!diagramRef.current || !trace || trace.length === 0) {
       if (diagramRef.current) {
-        diagramRef.current.innerHTML = '<p style="color: #666;">No trace data to display</p>'
+        diagramRef.current.innerHTML = '<p style="color: #666;">Select a variable to view its trace</p>'
       }
       return
     }
@@ -58,14 +58,16 @@ function App() {
     setOutput('Loading Python...\n')
     setAllTraceData({})
     setVariableName('')
+    if (diagramRef.current) {
+      diagramRef.current.innerHTML = ''
+    }
 
     try {
       const code = editorRef.current.getValue()
-      const { output: progOutput, traceData, firstVar } = await runAndTrace(code)
+      const { output: progOutput, traceData } = await runAndTrace(code)
 
       setAllTraceData(traceData)
 
-      // Format output
       let traceOutput = '--- Program Output ---\n'
       traceOutput += progOutput || '(no output)\n'
       traceOutput += '\n--- Variable Trace ---\n'
@@ -79,12 +81,6 @@ function App() {
 
       setOutput(traceOutput)
 
-      // Render diagram for first variable
-      if (firstVar && traceData[firstVar]) {
-        setVariableName(firstVar)
-        await renderDiagram(traceData[firstVar])
-      }
-
     } catch (err) {
       setOutput(prev => prev + 'Error: ' + err.message + '\n')
     }
@@ -95,8 +91,10 @@ function App() {
   useEffect(() => {
     if (variableName && allTraceData[variableName]) {
       renderDiagram(allTraceData[variableName])
+    } else if (diagramRef.current) {
+      diagramRef.current.innerHTML = '<p style="color: #666;">Select a variable to view its trace</p>'
     }
-  }, [variableName])
+  }, [variableName, allTraceData])
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', width: '100vw', padding: '1rem', boxSizing: 'border-box', backgroundColor: '#1e1e1e', color: '#fff' }}>
@@ -117,7 +115,7 @@ function App() {
             onChange={(e) => setVariableName(e.target.value)}
             style={{ padding: '0.3rem', minWidth: '100px' }}
           >
-            {Object.keys(allTraceData).length === 0 && <option value="">--</option>}
+            <option value="">-- Select --</option>
             {Object.keys(allTraceData).map(v => (
               <option key={v} value={v}>{v}</option>
             ))}
