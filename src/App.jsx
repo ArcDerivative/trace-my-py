@@ -31,7 +31,7 @@ function App() {
       .slice(0, 80);
   };
 
-  const generateMermaid = (trace, varName, error) => {
+  const generateMermaid = () => {
     let mermaidStr = 'graph TD\n';
 
     trace.forEach((v, i) => {
