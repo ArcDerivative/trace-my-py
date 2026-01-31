@@ -101,7 +101,16 @@ body {
   border-radius: 4px;
 }
 
-.toolbar button,
+.toolbar button {
+  padding: 0.65rem 1.2rem;
+  font-size: 1rem;
+  font-weight: 700;
+  border: 2px solid #646cff;
+  background: linear-gradient(180deg, #2b2b2b, #1a1a1a);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
 .toolbar select,
 .toolbar input {
   padding: 0.5rem 1rem;
@@ -114,8 +123,14 @@ body {
 }
 
 .toolbar button:hover {
-  border-color: #646cff;
-  background-color: #333;
+  border-color: #7a84ff;
+  background: linear-gradient(180deg, #353535, #1f1f1f);
+  transform: translateY(-1px);
+}
+
+.toolbar button:active {
+  transform: translateY(0);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
 }
 
 .toolbar label {
@@ -136,17 +151,27 @@ body {
   gap: 0.5rem;
 }
 
+
 .run-button {
-  font-weight: 600;
-  background-color: #1a5c1a;
+  background: linear-gradient(180deg, #1f7a1f, #155c15);
+  border-color: #39b54a;
 }
 
 .run-button:hover {
-  background-color: #2a7c2a;
+  background: linear-gradient(180deg, #2a9a2a, #1b6d1b);
+  border-color: #4dd167;
 }
 
+
 .diagram-button {
+  background: linear-gradient(180deg, #3a3a3a, #242424);
+  border-color: #8b8bff;
   margin-left: auto;
+}
+
+.diagram-button:hover {
+  background: linear-gradient(180deg, #4a4a4a, #2b2b2b);
+  border-color: #a0a7ff;
 }
 
 /* Remove old .controls styling */
