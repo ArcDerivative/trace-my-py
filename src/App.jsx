@@ -1,83 +1,101 @@
-import { useState, useRef } from 'react'
-import Editor from '@monaco-editor/react'
+// App.jsx
+import { useState, useRef } from 'react';
+import Editor from '@monaco-editor/react';
+import mermaid from 'mermaid';
+import './App.css';
+
+mermaid.initialize({ startOnLoad: false });
 
 function App() {
-  const [output, setOutput] = useState('')
-  const [running, setRunning] = useState(false)
-  const editorRef = useRef(null)
-  const pyodideRef = useRef(null)
+  const [output, setOutput] = useState('');
+  const [variableName, setVariableName] = useState('x');
+  const diagramRef = useRef(null);
 
-  const handleEditorMount = (editor) => {
-    editorRef.current = editor
-  }
+  const variableTrace = [
+    { line: 1, function: 'main', value: 0 },
+    { line: 2, function: 'main', value: 1 },
+    { line: 3, function: 'main', value: 3 },
+    { line: 4, function: 'main', value: 6 },
+    { line: 5, function: 'main', value: 10 }
+  ];
 
-  const runCode = async () => {
-    setRunning(true)
-    setOutput('')
+  const generateMermaid = (trace) => {
+  let mermaidStr = 'graph TD\n'; // graph header
 
-    try {
-      if (!pyodideRef.current) {
-        setOutput('Loading Python...\n')
-        const { loadPyodide } = await import('pyodide')
-        pyodideRef.current = await loadPyodide()
-      }
-
-      const code = editorRef.current.getValue()
-      
-      pyodideRef.current.setStdout({ batched: (text) => setOutput(prev => prev + text + '\n') })
-      pyodideRef.current.setStderr({ batched: (text) => setOutput(prev => prev + 'Error: ' + text + '\n') })
-
-      await pyodideRef.current.runPythonAsync(code)
-    } catch (err) {
-      setOutput(prev => prev + 'Error: ' + err.message + '\n')
+  trace.forEach((v, i) => {
+    const nodeId = `L${v.line}`; // ONLY letters/numbers
+    const label = `${v.value} (line ${v.line})`; // label with parentheses is fine
+    mermaidStr += `${nodeId}["${label}"]\n`; // wrap label in quotes
+    const next = trace[i + 1];
+    if (next) {
+      mermaidStr += `${nodeId} --> L${next.line}\n`; // edge must use IDs only
     }
+  });
 
-    setRunning(false)
-  }
+  return mermaidStr;
+};
+
+  const renderTestDiagram = () => {
+  if (!diagramRef.current) return;
+
+  const diagramDef = generateMermaid(variableTrace);
+
+  // Correctly render SVG
+  mermaid
+    .render('svgTestDiagram', diagramDef)
+    .then((obj) => {
+      diagramRef.current.innerHTML = obj.svg; // IMPORTANT: use obj.svg
+    })
+    .catch((err) => {
+      setOutput(`Mermaid render error: ${err}`);
+    });
+
+  setOutput('Test diagram rendered (fixed example case).');
+};
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', width: '100vw', padding: '1rem', boxSizing: 'border-box' }}>
-      <h1 style={{ margin: '0 0 1rem 0', textAlign: 'center' }}>Python Tracer</h1>
-      
-      <div style={{ display: 'flex', flex: 1, gap: '1rem', minHeight: 0, width: '100%' }}>
-        {/* Editor panel */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-          <button 
-            onClick={runCode} 
-            disabled={running}
-            style={{ padding: '0.5rem 1rem', marginBottom: '0.5rem', fontSize: '1rem', alignSelf: 'flex-start' }}
-          >
-            {running ? 'Running...' : 'Run'}
-          </button>
-          <div style={{ flex: 1, border: '1px solid #333' }}>
-            <Editor
-              height="100%"
-              defaultLanguage="python"
-              defaultValue={`# Write Python here\nfor i in range(5):\n    print(f"Hello {i}")`}
-              theme="vs-dark"
-              onMount={handleEditorMount}
-            />
-          </div>
+    <div className="app-container">
+      <h1>Python Tracer - Test Diagram</h1>
+      <div style={{ marginBottom: '1rem' }}>
+        <button onClick={renderTestDiagram} style={{ marginRight: '1rem' }}>
+          Render Test Diagram
+        </button>
+        <label>
+          Variable to trace:
+          <input
+            type="text"
+            value={variableName}
+            onChange={(e) => setVariableName(e.target.value)}
+            style={{ marginLeft: '0.3rem' }}
+          />
+        </label>
+      </div>
+
+      <div style={{ display: 'flex', gap: '1rem' }}>
+        {/* Editor */}
+        <div style={{ flex: 1 }}>
+          <Editor
+            height="300px"
+            defaultLanguage="python"
+            defaultValue={`# Type anything here\nx = 0\nfor i in range(5):\n    x += i\nprint(x)`}
+          />
         </div>
 
-        {/* Output panel */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-          <h3 style={{ margin: '0 0 0.5rem 0' }}>Output</h3>
-          <pre style={{ 
-            flex: 1, 
-            backgroundColor: '#1e1e1e', 
-            padding: '1rem', 
-            margin: 0,
-            overflow: 'auto',
-            border: '1px solid #333',
-            fontFamily: 'monospace'
-          }}>
-            {output || 'Click "Run" to see output'}
-          </pre>
+        {/* Output + Diagram */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          <div style={{ background: '#1e1e1e', color: '#fff', padding: '1rem', minHeight: '50px' }}>
+            {output}
+          </div>
+          <div
+            ref={diagramRef}
+            style={{ border: '1px solid #333', padding: '1rem', minHeight: '300px', overflow: 'auto' }}
+          ></div>
         </div>
       </div>
     </div>
-  )
+  );
 }
 
-export default App
+export default App;
+
+
