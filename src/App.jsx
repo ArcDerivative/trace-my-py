@@ -1,172 +1,176 @@
-import { useState, useRef, useEffect } from 'react'
-import Editor from '@monaco-editor/react'
-import mermaid from 'mermaid'
-import { runAndTrace } from './tracer'
+import { useState, useRef, useEffect } from 'react';
+import Editor from '@monaco-editor/react';
+import mermaid from 'mermaid';
+import { runAndTrace } from './tracer';
+import './App.css';
 
-mermaid.initialize({ startOnLoad: false, theme: 'dark' })
+mermaid.initialize({ startOnLoad: false, theme: 'dark' });
 
 function App() {
-  const [language, setLanguage] = useState('python')
-  const [output, setOutput] = useState('')
-  const [allTraceData, setAllTraceData] = useState({})
-  const [variableName, setVariableName] = useState('')
-  const [running, setRunning] = useState(false)
+  const [language, setLanguage] = useState('python');
+  const [output, setOutput] = useState('');
+  const [allTraceData, setAllTraceData] = useState({});
+  const [variableName, setVariableName] = useState('');
+  const [errorMessage, setErrorMessage] = useState(null);
+  const [running, setRunning] = useState(false);
 
-  const editorRef = useRef(null)
-  const diagramRef = useRef(null)
-  const diagramIdRef = useRef(0)
+  const editorRef = useRef(null);
+  const diagramRef = useRef(null);
+  const diagramIdRef = useRef(0);
 
   const handleEditorMount = (editor) => {
-    editorRef.current = editor
-  }
-
-  /* ---------------- Mermaid safety ---------------- */
+    editorRef.current = editor;
+  };
 
   const mermaidSafe = (value) => {
-    if (value == null) return 'null'
+    if (value == null) return 'null';
     return String(value)
       .replace(/"/g, "'")
       .replace(/[<>]/g, '')
       .replace(/\n/g, ' ')
-      .slice(0, 80)
-  }
+      .slice(0, 80);
+  };
 
-  const generateMermaid = (trace) => {
-    let mermaidStr = 'graph TD\n'
+  const generateMermaid = (trace, varName, error) => {
+    let mermaidStr = 'graph TD\n';
 
     trace.forEach((v, i) => {
-      const nodeId = `N${i}`
-      const label = `${mermaidSafe(v.value)} @ line ${v.line}`
-      mermaidStr += `${nodeId}["${label}"]\n`
+      const nodeId = `N${i}`;
+      const label = `${varName} = ${mermaidSafe(v.value)}<br/>line ${v.line} (${v.function})`;
+      mermaidStr += `${nodeId}["${label}"]\n`;
       if (i < trace.length - 1) {
-        mermaidStr += `${nodeId} --> N${i + 1}\n`
+        mermaidStr += `${nodeId} --> N${i + 1}\n`;
       }
-    })
+    });
 
-    return mermaidStr
-  }
-
-  const renderDiagram = async () => {
-    if (!diagramRef.current) return
-
-    const trace = allTraceData[variableName]
-    if (!trace || trace.length === 0) {
-      diagramRef.current.innerHTML =
-        '<p style="color:#666">Select a variable to view its trace</p>'
-      return
+    if (error) {
+      const lastNode = trace.length > 0 ? `N${trace.length - 1}` : null;
+      const errorNode = `ERR`;
+      mermaidStr += `${errorNode}["❌ Error<br/>${mermaidSafe(error)}"]\n`;
+      if (lastNode) {
+        mermaidStr += `${lastNode} --> ${errorNode}\n`;
+      }
     }
 
-    const diagramDef = generateMermaid(trace)
-    diagramIdRef.current += 1
+    return mermaidStr;
+  };
 
-    try {
-      const { svg } = await mermaid.render(
-        `diagram-${diagramIdRef.current}`,
-        diagramDef
-      )
-      diagramRef.current.innerHTML = svg
-    } catch (err) {
+  const renderDiagram = () => {
+    if (!diagramRef.current) return;
+
+    const trace = allTraceData[variableName] || [];
+    if (trace.length === 0 && !errorMessage) {
       diagramRef.current.innerHTML =
-        `<pre style="color:red">Mermaid error:\n${err.message}</pre>`
+        '<p style="color:#666;text-align:center;padding:2rem;">Select a variable to view its trace</p>';
+      return;
     }
-  }
 
-  /* ---------------- Run backend ---------------- */
+    const diagramDef = generateMermaid(trace, variableName, errorMessage);
+    diagramIdRef.current += 1;
+
+    mermaid
+      .render(`diagram-${diagramIdRef.current}`, diagramDef)
+      .then((obj) => {
+        diagramRef.current.innerHTML = obj.svg;
+      })
+      .catch((err) => {
+        diagramRef.current.innerHTML = `<pre style="color:red">Mermaid error:\n${err.message}</pre>`;
+      });
+  };
 
   const handleRun = async () => {
-    setRunning(true)
-    setOutput('Running...\n')
-    setAllTraceData({})
-    setVariableName('')
-    if (diagramRef.current) diagramRef.current.innerHTML = ''
+    setRunning(true);
+    setOutput('Running...\n');
+    setAllTraceData({});
+    setVariableName('');
+    setErrorMessage(null);
+    if (diagramRef.current) diagramRef.current.innerHTML = '';
 
     try {
-      const code = editorRef.current.getValue()
-      const { output: progOutput, traceData } = await runAndTrace(code)
+      const code = editorRef.current.getValue();
+      const { output: progOutput, traceData, errorMessage } = await runAndTrace(code);
 
-      setAllTraceData(traceData)
-      setOutput(progOutput || '(no output)')
+      setAllTraceData(traceData);
+      setErrorMessage(errorMessage || null);
+      setOutput(progOutput || '(no output)');
     } catch (err) {
-      setOutput(`Error: ${err.message}`)
+      setOutput(`Error: ${err.message}`);
     }
 
-    setRunning(false)
-  }
-
-  /* ---------------- Re-render diagram on variable change ---------------- */
+    setRunning(false);
+  };
 
   useEffect(() => {
-    if (variableName) renderDiagram()
-  }, [variableName])
+    if (variableName) renderDiagram();
+  }, [variableName, allTraceData, errorMessage]);
 
   return (
-    <div style={{ height: '100vh', padding: '1rem', background: '#1e1e1e', color: '#fff' }}>
-      <h1 style={{ textAlign: 'center' }}>Python Tracer</h1>
+    <div className="app-container">
+      <h1 className="app-title">Tracer</h1>
 
-      {/* Controls */}
-      <div style={{ display: 'flex', gap: '1rem', marginBottom: '1rem' }}>
-        <button onClick={handleRun} disabled={running}>
-          {running ? 'Running…' : 'Run & Trace'}
-        </button>
+      <div className="controls">
+        <select
+          className="language-select"
+          value={language}
+          onChange={(e) => setLanguage(e.target.value)}
+        >
+          <option value="python">Python</option>
+        </select>
 
-        <label>
-          Variable:
+        <label className="variable-input">
+          Variable to trace:
           <select
             value={variableName}
             onChange={(e) => setVariableName(e.target.value)}
             style={{ marginLeft: '0.5rem' }}
           >
             <option value="">-- select --</option>
-            {Object.keys(allTraceData).map(v => (
+            {Object.keys(allTraceData).map((v) => (
               <option key={v} value={v}>{v}</option>
             ))}
           </select>
         </label>
 
-        <label>
-          Language:
-          <select
-            value={language}
-            onChange={(e) => setLanguage(e.target.value)}
-            style={{ marginLeft: '0.5rem' }}
-          >
-            <option value="python">Python</option>
-          </select>
-        </label>
+        <button
+          className="run-button"
+          onClick={handleRun}
+          disabled={running}
+        >
+          {running ? 'Running...' : 'Run & Trace'}
+        </button>
       </div>
 
-      {/* Main layout */}
-      <div style={{ display: 'flex', gap: '1rem', height: 'calc(100% - 140px)' }}>
-        {/* Editor */}
-        <div style={{ flex: 1 }}>
-          <Editor
-            height="100%"
-            language={language}
-            theme="vs-dark"
-            defaultValue={`x = 0
+      <div className="main-panel">
+        <div className="editor-panel">
+          <div className="editor-container">
+            <Editor
+              height="100%"
+              language={language}
+              theme="vs-dark"
+              defaultValue={`x = 0
 for i in range(5):
     x += i
 print(x)`}
-            onMount={handleEditorMount}
-          />
+              onMount={handleEditorMount}
+            />
+          </div>
         </div>
 
-        {/* Output + Diagram */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          <pre style={{ flex: 1, background: '#2d2d2d', padding: '1rem', overflow: 'auto' }}>
-            {output}
-          </pre>
-          <div
-            ref={diagramRef}
-            style={{ flex: 1, background: '#fff', padding: '1rem', overflow: 'auto' }}
-          />
+        <div className="output-diagram-panel">
+          <div className="output-panel">
+            <pre className="output-pre">{output}</pre>
+          </div>
+          <div className="diagram-panel">
+            <div className="diagram-container" ref={diagramRef}></div>
+          </div>
         </div>
       </div>
     </div>
-  )
+  );
 }
 
-export default App
+export default App;
+
 
 
 

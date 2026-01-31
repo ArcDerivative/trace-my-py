@@ -9,7 +9,13 @@ frame_prev_line = {}
 def is_user_var(name):
     if name.startswith('_'):
         return False
-    if name in ('tracer', 'run_with_trace', 'trace_data', 'prev_vars', 'is_user_var', 'safe_repr', 'user_code', 'result', 'json', 'sys', 'get_scope_chain', 'is_function', 'capture_changes', 'frame_prev_line'):
+    if name in (
+        'tracer', 'run_with_trace', 'trace_data', 'prev_vars',
+        'is_user_var', 'safe_repr', 'user_code', 'result',
+        'json', 'sys', 'ast',  # 👈 ADD ast here
+        'get_scope_chain', 'is_function',
+        'capture_changes', 'frame_prev_line'
+    ):
         return False
     return True
 
@@ -105,8 +111,27 @@ def run_with_trace(code):
 
 let pyodideInstance = null
 
+const preprocessCode = (code) => {
+  let processedCode = code
+
+  // Add ast import if needed
+  if (processedCode.includes('input(') && !processedCode.includes('import ast')) {
+    processedCode = 'import ast\n' + processedCode
+  }
+
+  // Replace input() safely
+  processedCode = processedCode.replace(
+    /\binput\s*\(\s*\)/g,
+    'ast.literal_eval(input())'
+  )
+
+  return processedCode
+}
+
 export async function runAndTrace(code) {
   let printOutput = ''
+
+  const processedCode = preprocessCode(code) // 👈 ADD THIS
 
   if (!pyodideInstance) {
     const { loadPyodide } = await import('pyodide')
@@ -119,15 +144,16 @@ export async function runAndTrace(code) {
   await pyodideInstance.runPythonAsync(TRACER_CODE)
 
   const wrappedCode = `
-user_code = ${JSON.stringify(code)}
+user_code = ${JSON.stringify(processedCode)}
 result = run_with_trace(user_code)
 result
 `
+
   const jsonString = await pyodideInstance.runPythonAsync(wrappedCode)
   const traceData = JSON.parse(jsonString)
 
   return {
     output: printOutput,
-    traceData: traceData
+    traceData
   }
 }

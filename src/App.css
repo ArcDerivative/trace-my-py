@@ -1,23 +1,77 @@
-/* index.css or global */
 html, body {
   margin: 0;
   padding: 0;
   overflow-x: hidden;
 }
 
-/* App.css */
 .app-container {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  width: 100%;              /* ✅ FIX */
+  width: 100%;              
   padding: 1rem;
   box-sizing: border-box;
+  background: #1e1e1e;
+  color: #fff;
 }
 
 .app-title {
   text-align: center;
   margin-bottom: 1rem;
+  color: #fff;
+}
+
+.controls {
+  display: flex;
+  align-items: center;
+  margin-bottom: 1rem;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 0.5rem;
+}
+
+.run-button {
+  padding: 0.75rem 1.5rem;
+  font-size: 1.2rem;
+  background-color: #007acc;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.run-button:hover {
+  background-color: #005a9e;
+}
+
+.run-button:disabled {
+  background-color: #555;
+  cursor: not-allowed;
+}
+
+.language-select {
+  padding: 0.75rem 1.5rem;
+  font-size: 1.2rem;
+  border-radius: 4px;
+  background-color: #fff;
+  color: #000;
+  border: 1px solid #333;
+}
+
+.variable-input {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #fff;
+}
+
+.variable-input select {
+  padding: 0.5rem;
+  font-size: 1rem;
+  background-color: #fff;
+  color: #000;
+  border: 1px solid #333;
+  border-radius: 4px;
 }
 
 .main-panel {
@@ -31,29 +85,13 @@ html, body {
   flex: 1;
   display: flex;
   flex-direction: column;
-  min-width: 0;             /* ✅ IMPORTANT for flex overflow */
-}
-
-.controls {
-  display: flex;
-  align-items: center;
-  margin-bottom: 0.5rem;
-  gap: 0.5rem;
-}
-
-.run-button {
-  padding: 0.5rem 1rem;
-  font-size: 1rem;
-}
-
-.variable-input input {
-  padding: 0.3rem;
+  min-width: 0;
 }
 
 .editor-container {
   flex: 1;
   border: 1px solid #333;
-  min-width: 0;             /* ✅ Monaco fix */
+  min-width: 0;
   overflow: hidden;
 }
 
@@ -62,7 +100,7 @@ html, body {
   display: flex;
   flex-direction: column;
   gap: 1rem;
-  min-width: 0;             /* ✅ */
+  min-width: 0;
 }
 
 .output-panel,
@@ -75,17 +113,21 @@ html, body {
 
 .output-pre {
   flex: 1;
-  background-color: #1e1e1e;
+  background-color: #2d2d2d;
   padding: 1rem;
   margin: 0;
   overflow: auto;
   border: 1px solid #333;
   font-family: monospace;
+  color: #fff;
 }
 
 .diagram-container {
   flex: 1;
   border: 1px solid #333;
   overflow: auto;
+  background: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
-
