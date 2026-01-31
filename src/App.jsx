@@ -66,21 +66,8 @@ function App() {
   return (
     <div className="app-container">
       <h1 className="app-title">Tracer - Test Diagram</h1>
-      <div className="controls">
-        <button onClick={renderTestDiagram} style={{ marginRight: '1rem' }}>
-          Render Test Diagram
-        </button>
-        <label className="variable-input">
-          Variable to trace:
-          <input
-            type="text"
-            value={variableName}
-            onChange={(e) => setVariableName(e.target.value)}
-          />
-        </label>
-      </div>
 
-      <div className="controls">
+      <div className="toolbar">
         <button
           onClick={runCode}
           disabled={running}
@@ -98,6 +85,19 @@ function App() {
             <option value="python">Python</option>
           </select>
         </div>
+
+        <label className="variable-input">
+          Variable to trace:
+          <input
+            type="text"
+            value={variableName}
+            onChange={(e) => setVariableName(e.target.value)}
+          />
+        </label>
+
+        <button onClick={renderTestDiagram} className="diagram-button">
+          Render Test Diagram
+        </button>
       </div>
 
       <div className="main-panel">
