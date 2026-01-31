@@ -23,7 +23,7 @@ function App() {
       }
 
       const code = editorRef.current.getValue()
-      
+
       pyodideRef.current.setStdout({ batched: (text) => setOutput(prev => prev + text + '\n') })
       pyodideRef.current.setStderr({ batched: (text) => setOutput(prev => prev + 'Error: ' + text + '\n') })
 
@@ -38,12 +38,12 @@ function App() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', width: '100vw', padding: '1rem', boxSizing: 'border-box' }}>
       <h1 style={{ margin: '0 0 1rem 0', textAlign: 'center' }}>Python Tracer</h1>
-      
+
       <div style={{ display: 'flex', flex: 1, gap: '1rem', minHeight: 0, width: '100%' }}>
         {/* Editor panel */}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-          <button 
-            onClick={runCode} 
+          <button
+            onClick={runCode}
             disabled={running}
             style={{ padding: '0.5rem 1rem', marginBottom: '0.5rem', fontSize: '1rem', alignSelf: 'flex-start' }}
           >
@@ -63,10 +63,11 @@ function App() {
         {/* Output panel */}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
           <h3 style={{ margin: '0 0 0.5rem 0' }}>Output</h3>
-          <pre style={{ 
-            flex: 1, 
-            backgroundColor: '#1e1e1e', 
-            padding: '1rem', 
+          <pre style={{
+            flex: 1,
+            backgroundColor: '#1e1e1e',
+            color: '#d4d4d4',
+            padding: '1rem',
             margin: 0,
             overflow: 'auto',
             border: '1px solid #333',
