@@ -18,7 +18,7 @@ function App() {
     setOutput('Run clicked (stub)');
   };
 
-const handleEditorMount = () => {};
+  const handleEditorMount = () => { };
 
   const variableTrace = [
     { line: 1, function: 'main', value: 0 },
@@ -29,54 +29,53 @@ const handleEditorMount = () => {};
   ];
 
   const generateMermaid = (trace) => {
-  let mermaidStr = 'graph TD\n'; // graph header
+    let mermaidStr = 'graph TD\n'; // graph header
 
-  trace.forEach((v, i) => {
-    const nodeId = `L${v.line}`; // ONLY letters/numbers
-    const label = `${v.value} (line ${v.line})`; // label with parentheses is fine
-    mermaidStr += `${nodeId}["${label}"]\n`; // wrap label in quotes
-    const next = trace[i + 1];
-    if (next) {
-      mermaidStr += `${nodeId} --> L${next.line}\n`; // edge must use IDs only
-    }
-  });
-
-  return mermaidStr;
-};
-
-  const renderTestDiagram = () => {
-  if (!diagramRef.current) return;
-
-  const diagramDef = generateMermaid(variableTrace);
-
-  // Correctly render SVG
-  const id = `diagram-${Date.now()}`;
-
-  mermaid.render(id, diagramDef)
-    .then((obj) => {
-      diagramRef.current.innerHTML = obj.svg; // IMPORTANT: use obj.svg
-    })
-    .catch((err) => {
-      setOutput(`Mermaid render error: ${err}`);
+    trace.forEach((v, i) => {
+      const nodeId = `L${v.line}`; // ONLY letters/numbers
+      const label = `${v.value} (line ${v.line})`; // label with parentheses is fine
+      mermaidStr += `${nodeId}["${label}"]\n`; // wrap label in quotes
+      const next = trace[i + 1];
+      if (next) {
+        mermaidStr += `${nodeId} --> L${next.line}\n`; // edge must use IDs only
+      }
     });
 
-  setOutput('Test diagram rendered (fixed example case).');
-};
+    return mermaidStr;
+  };
+
+  const renderTestDiagram = () => {
+    if (!diagramRef.current) return;
+
+    const diagramDef = generateMermaid(variableTrace);
+
+    // Correctly render SVG
+    const id = `diagram-${Date.now()}`;
+
+    mermaid.render(id, diagramDef)
+      .then((obj) => {
+        diagramRef.current.innerHTML = obj.svg; // IMPORTANT: use obj.svg
+      })
+      .catch((err) => {
+        setOutput(`Mermaid render error: ${err}`);
+      });
+
+    setOutput('Test diagram rendered (fixed example case).');
+  };
 
   return (
     <div className="app-container">
-      <h1>Tracer - Test Diagram</h1>
-      <div style={{ marginBottom: '1rem' }}>
+      <h1 className="app-title">Tracer - Test Diagram</h1>
+      <div className="controls">
         <button onClick={renderTestDiagram} style={{ marginRight: '1rem' }}>
           Render Test Diagram
         </button>
-        <label>
+        <label className="variable-input">
           Variable to trace:
           <input
             type="text"
             value={variableName}
             onChange={(e) => setVariableName(e.target.value)}
-            style={{ marginLeft: '0.3rem' }}
           />
         </label>
       </div>
@@ -90,7 +89,6 @@ const handleEditorMount = () => {};
           {running ? 'Running...' : 'Run'}
         </button>
 
-        {/* Language selector */}
         <div className="language-selector">
           <label>Language:</label>
           <select
@@ -102,33 +100,32 @@ const handleEditorMount = () => {};
         </div>
       </div>
 
-
-      <div style={{ display: 'flex', gap: '1rem' }}>
+      <div className="main-panel">
         {/* Editor */}
-        <div style={{ flex: 1 }}>
-          <Editor
-            height="100%"
-            language={language}
-            theme="vs-dark"
-            onMount={handleEditorMount}
-          />
+        <div className="editor-panel">
+          <div className="editor-container">
+            <Editor
+              height="100%"
+              language={language}
+              theme="vs-dark"
+              onMount={handleEditorMount}
+            />
+          </div>
         </div>
 
         {/* Output + Diagram */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          <div style={{ background: '#1e1e1e', color: '#fff', padding: '1rem', minHeight: '50px' }}>
-            {output}
+        <div className="output-diagram-panel">
+          <div className="output-panel">
+            <pre className="output-pre">{output}</pre>
           </div>
-          <div
-            ref={diagramRef}
-            style={{ border: '1px solid #333', padding: '1rem', minHeight: '300px', overflow: 'auto' }}
-          ></div>
+          <div className="diagram-panel">
+            <div className="diagram-container" ref={diagramRef}></div>
+          </div>
         </div>
       </div>
     </div>
   );
 }
-
 export default App;
 
 
