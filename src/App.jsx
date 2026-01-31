@@ -4,7 +4,16 @@ import mermaid from 'mermaid';
 import { runAndTrace } from './tracer';
 import './App.css';
 
-mermaid.initialize({ startOnLoad: false, theme: 'dark' });
+mermaid.initialize({ 
+  startOnLoad: false, 
+  theme: 'dark',
+  themeVariables: {
+    background: '#1e293b',
+    primaryColor: '#334155',
+    primaryTextColor: '#f8fafc',
+    lineColor: '#a78bfa'
+  }
+});
 
 function App() {
   const [language, setLanguage] = useState('python');
@@ -22,6 +31,7 @@ function App() {
     editorRef.current = editor;
   };
 
+  /* ---------------- Mermaid safety ---------------- */
   const mermaidSafe = (value) => {
     if (value == null) return 'null';
     return String(value)
@@ -31,18 +41,20 @@ function App() {
       .slice(0, 80);
   };
 
-  const generateMermaid = () => {
+  const generateMermaid = (trace, varName, error) => {
     let mermaidStr = 'graph TD\n';
 
     trace.forEach((v, i) => {
       const nodeId = `N${i}`;
-      const label = `${varName} = ${mermaidSafe(v.value)}<br/>line ${v.line} (${v.function})`;
+      const functionName = v.function.charAt(0).toUpperCase() + v.function.slice(1);
+      const label = `${functionName}<br/>${varName} = ${mermaidSafe(v.value)}<br/>line ${v.line}`;
       mermaidStr += `${nodeId}["${label}"]\n`;
       if (i < trace.length - 1) {
         mermaidStr += `${nodeId} --> N${i + 1}\n`;
       }
     });
 
+    // Add error node if present
     if (error) {
       const lastNode = trace.length > 0 ? `N${trace.length - 1}` : null;
       const errorNode = `ERR`;
@@ -55,7 +67,7 @@ function App() {
     return mermaidStr;
   };
 
-  const renderDiagram = () => {
+  const renderDiagram = async () => {
     if (!diagramRef.current) return;
 
     const trace = allTraceData[variableName] || [];
@@ -68,14 +80,16 @@ function App() {
     const diagramDef = generateMermaid(trace, variableName, errorMessage);
     diagramIdRef.current += 1;
 
-    mermaid
-      .render(`diagram-${diagramIdRef.current}`, diagramDef)
-      .then((obj) => {
-        diagramRef.current.innerHTML = obj.svg;
-      })
-      .catch((err) => {
-        diagramRef.current.innerHTML = `<pre style="color:red">Mermaid error:\n${err.message}</pre>`;
-      });
+    try {
+      const { svg } = await mermaid.render(
+        `diagram-${diagramIdRef.current}`,
+        diagramDef
+      );
+      diagramRef.current.innerHTML = svg;
+    } catch (err) {
+      diagramRef.current.innerHTML =
+        `<pre style="color:red">Mermaid error:\n${err.message}</pre>`;
+    }
   };
 
   const handleRun = async () => {
@@ -106,8 +120,9 @@ function App() {
 
   return (
     <div className="app-container">
-      <h1 className="app-title">Tracer</h1>
+      <h1 className="app-title">Variable Tracer</h1>
 
+      {/* Controls */}
       <div className="controls">
         <select
           className="language-select"
@@ -140,8 +155,11 @@ function App() {
         </button>
       </div>
 
+      {/* Main layout */}
       <div className="main-panel">
+        {/* Editor */}
         <div className="editor-panel">
+          <h3 className="panel-header">Code Editor</h3>
           <div className="editor-container">
             <Editor
               height="100%"
@@ -156,11 +174,14 @@ print(x)`}
           </div>
         </div>
 
+        {/* Output + Diagram */}
         <div className="output-diagram-panel">
           <div className="output-panel">
+            <h3 className="panel-header">Console Output</h3>
             <pre className="output-pre">{output}</pre>
           </div>
           <div className="diagram-panel">
+            <h3 className="panel-header">Variable Flow Diagram</h3>
             <div className="diagram-container" ref={diagramRef}></div>
           </div>
         </div>
@@ -170,6 +191,7 @@ print(x)`}
 }
 
 export default App;
+
 
 
 

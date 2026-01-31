@@ -1,10 +1,12 @@
 const TRACER_CODE = `
 import sys
 import json
+import traceback
 
 trace_data = {}
 prev_vars = {}
 frame_prev_line = {}
+error_message = None
 
 def is_user_var(name):
     if name.startswith('_'):
@@ -12,9 +14,9 @@ def is_user_var(name):
     if name in (
         'tracer', 'run_with_trace', 'trace_data', 'prev_vars',
         'is_user_var', 'safe_repr', 'user_code', 'result',
-        'json', 'sys', 'ast',  # 👈 ADD ast here
+        'json', 'sys', 'ast',
         'get_scope_chain', 'is_function',
-        'capture_changes', 'frame_prev_line'
+        'capture_changes', 'frame_prev_line', 'error_message'
     ):
         return False
     return True
@@ -59,7 +61,6 @@ def capture_changes(frame, line_no):
     
     for k, v_repr in current_vars.items():
         prev_repr = prev_vars.get(k)
-        
         if prev_repr is None or prev_repr != v_repr:
             scope_chain = get_scope_chain(frame)
             func_name = scope_chain[-1][0] if scope_chain else 'global'
@@ -76,7 +77,6 @@ def capture_changes(frame, line_no):
 
 def tracer(frame, event, arg):
     global frame_prev_line
-    
     if frame.f_code.co_filename != '<string>':
         return tracer
     
@@ -95,65 +95,70 @@ def tracer(frame, event, arg):
     return tracer
 
 def run_with_trace(code):
-    global trace_data, prev_vars, frame_prev_line
+    global trace_data, prev_vars, frame_prev_line, error_message
     trace_data = {}
     prev_vars = {}
     frame_prev_line = {}
-    
+    error_message = None
+
     sys.settrace(tracer)
     try:
         exec(code, {'__name__': '__main__', '__builtins__': __builtins__})
+    except Exception as e:
+        # Stop on first error
+        error_message = traceback.format_exc().splitlines()[-1]  # last line only
     finally:
         sys.settrace(None)
     
-    return json.dumps(trace_data)
-`
+    return json.dumps({
+        'traceData': trace_data,
+        'errorMessage': error_message
+    })
+`;
 
-let pyodideInstance = null
+let pyodideInstance = null;
 
 const preprocessCode = (code) => {
-  let processedCode = code
+  let processedCode = code;
 
   // Add ast import if needed
   if (processedCode.includes('input(') && !processedCode.includes('import ast')) {
-    processedCode = 'import ast\n' + processedCode
+    processedCode = 'import ast\n' + processedCode;
   }
 
   // Replace input() safely
-  processedCode = processedCode.replace(
-    /\binput\s*\(\s*\)/g,
-    'ast.literal_eval(input())'
-  )
+  processedCode = processedCode.replace(/\binput\s*\(\s*\)/g, 'ast.literal_eval(input())');
 
-  return processedCode
-}
+  return processedCode;
+};
 
 export async function runAndTrace(code) {
-  let printOutput = ''
+  let printOutput = '';
 
-  const processedCode = preprocessCode(code) // 👈 ADD THIS
+  const processedCode = preprocessCode(code);
 
   if (!pyodideInstance) {
-    const { loadPyodide } = await import('pyodide')
-    pyodideInstance = await loadPyodide()
+    const { loadPyodide } = await import('pyodide');
+    pyodideInstance = await loadPyodide();
   }
 
-  pyodideInstance.setStdout({ batched: (text) => { printOutput += text + '\n' } })
-  pyodideInstance.setStderr({ batched: (text) => { printOutput += 'Error: ' + text + '\n' } })
+  pyodideInstance.setStdout({ batched: (text) => { printOutput += text + '\n'; } });
+  pyodideInstance.setStderr({ batched: (text) => { printOutput += 'Error: ' + text + '\n'; } });
 
-  await pyodideInstance.runPythonAsync(TRACER_CODE)
+  await pyodideInstance.runPythonAsync(TRACER_CODE);
 
   const wrappedCode = `
 user_code = ${JSON.stringify(processedCode)}
 result = run_with_trace(user_code)
 result
-`
+`;
 
-  const jsonString = await pyodideInstance.runPythonAsync(wrappedCode)
-  const traceData = JSON.parse(jsonString)
+  const jsonString = await pyodideInstance.runPythonAsync(wrappedCode);
+  const parsed = JSON.parse(jsonString);
 
   return {
     output: printOutput,
-    traceData
-  }
+    traceData: parsed.traceData,
+    errorMessage: parsed.errorMessage
+  };
 }
