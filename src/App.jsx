@@ -7,9 +7,18 @@ import './App.css';
 mermaid.initialize({ startOnLoad: false });
 
 function App() {
+  const [language, setLanguage] = useState('python');
   const [output, setOutput] = useState('');
   const [variableName, setVariableName] = useState('x');
   const diagramRef = useRef(null);
+
+  const [running, setRunning] = useState(false);
+
+  const runCode = () => {
+    setOutput('Run clicked (stub)');
+  };
+
+const handleEditorMount = () => {};
 
   const variableTrace = [
     { line: 1, function: 'main', value: 0 },
@@ -41,8 +50,9 @@ function App() {
   const diagramDef = generateMermaid(variableTrace);
 
   // Correctly render SVG
-  mermaid
-    .render('svgTestDiagram', diagramDef)
+  const id = `diagram-${Date.now()}`;
+
+  mermaid.render(id, diagramDef)
     .then((obj) => {
       diagramRef.current.innerHTML = obj.svg; // IMPORTANT: use obj.svg
     })
@@ -55,7 +65,7 @@ function App() {
 
   return (
     <div className="app-container">
-      <h1>Python Tracer - Test Diagram</h1>
+      <h1>Tracer - Test Diagram</h1>
       <div style={{ marginBottom: '1rem' }}>
         <button onClick={renderTestDiagram} style={{ marginRight: '1rem' }}>
           Render Test Diagram
@@ -71,13 +81,36 @@ function App() {
         </label>
       </div>
 
+      <div className="controls">
+        <button
+          onClick={runCode}
+          disabled={running}
+          className="run-button"
+        >
+          {running ? 'Running...' : 'Run'}
+        </button>
+
+        {/* Language selector */}
+        <div className="language-selector">
+          <label>Language:</label>
+          <select
+            value={language}
+            onChange={(e) => setLanguage(e.target.value)}
+          >
+            <option value="python">Python</option>
+          </select>
+        </div>
+      </div>
+
+
       <div style={{ display: 'flex', gap: '1rem' }}>
         {/* Editor */}
         <div style={{ flex: 1 }}>
           <Editor
-            height="300px"
-            defaultLanguage="python"
-            defaultValue={`# Type anything here\nx = 0\nfor i in range(5):\n    x += i\nprint(x)`}
+            height="100%"
+            language={language}
+            theme="vs-dark"
+            onMount={handleEditorMount}
           />
         </div>
 
