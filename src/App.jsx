@@ -4,7 +4,16 @@ import mermaid from 'mermaid';
 import { runAndTrace } from './tracer';
 import './App.css';
 
-mermaid.initialize({ startOnLoad: false, theme: 'dark' });
+mermaid.initialize({ 
+  startOnLoad: false, 
+  theme: 'dark',
+  themeVariables: {
+    background: '#1e293b', 
+    primaryColor: '#334155',
+    primaryTextColor: '#f8fafc',
+    lineColor: '#a78bfa'
+  }
+});
 
 function App() {
   const [language, setLanguage] = useState('python');
@@ -36,7 +45,8 @@ function App() {
 
     trace.forEach((v, i) => {
       const nodeId = `N${i}`;
-      const label = `${varName} = ${v.value}<br/>line ${v.line} (${v.function})`;
+      const functionName = v.function.charAt(0).toUpperCase() + v.function.slice(1);
+      const label = `${functionName}<br/>${varName} = ${v.value}<br/>line ${v.line}`;
       mermaidStr += `${nodeId}["${label}"]\n`;
 
       if (i < trace.length - 1) {
@@ -100,7 +110,7 @@ function App() {
 
   return (
     <div className="app-container">
-      <h1 className="app-title">Tracer</h1>
+      <h1 className="app-title">Variable Tracer</h1>
 
       {/* Controls */}
       <div className="controls">
@@ -139,6 +149,7 @@ function App() {
       <div className="main-panel">
         {/* Editor */}
         <div className="editor-panel">
+          <h3 className="panel-header">Code Editor</h3>
           <div className="editor-container">
             <Editor
               height="100%"
@@ -156,9 +167,11 @@ print(x)`}
         {/* Output + Diagram */}
         <div className="output-diagram-panel">
           <div className="output-panel">
+            <h3 className="panel-header">Console Output</h3>
             <pre className="output-pre">{output}</pre>
           </div>
           <div className="diagram-panel">
+            <h3 className="panel-header">Variable Flow Diagram</h3>
             <div className="diagram-container" ref={diagramRef}></div>
           </div>
         </div>
