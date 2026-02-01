@@ -525,7 +525,10 @@ function App() {
 
   return (
     <div className="app-container">
+      <div className="header">
+      <img src="/glassbox-logo.png" alt="GlassBox Logo" className="logo" />
       <h1 className="app-title">Variable Tracer</h1>
+    </div>
 
       {/* Controls */}
       <div className="controls">
