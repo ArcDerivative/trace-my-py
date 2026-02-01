@@ -81,6 +81,7 @@ function App() {
   const lineToVarMapRef = useRef({});
   const traceDataRef = useRef({});
   const scopeInfoRef = useRef({ lineToScope: {}, scopeToLocals: {} });
+  const selectedVarRef = useRef('');
 
   const activeVar = hoveredVar || selectedVar;
   const hasTraceData = Object.keys(allTraceData).length > 0;
@@ -94,6 +95,10 @@ function App() {
   useEffect(() => {
     panRef.current = pan;
   }, [pan]);
+
+  useEffect(() => {
+    selectedVarRef.current = selectedVar;
+  }, [selectedVar]);
 
   // Reset zoom and pan when diagram changes
   const resetView = useCallback(() => {
@@ -145,6 +150,7 @@ function App() {
     lineToVarMapRef.current = {};
     traceDataRef.current = {};
     scopeInfoRef.current = { lineToScope: {}, scopeToLocals: {} };
+    selectedVarRef.current = '';
     resetView();
   };
 
@@ -230,8 +236,12 @@ function App() {
       setSelectedVar(scopedVar);
       highlightVariable(scopedVar, lineNumber);
     } else {
-      clearHighlights();
       setHoveredVar(null);
+      if (selectedVarRef.current) {
+        highlightVariable(selectedVarRef.current, null);
+      } else {
+        clearHighlights();
+      }
     }
   };
 
@@ -247,8 +257,12 @@ function App() {
     });
 
     editor.onMouseLeave(() => {
-      clearHighlights();
       setHoveredVar(null);
+      if (selectedVarRef.current) {
+        highlightVariable(selectedVarRef.current, null);
+      } else {
+        clearHighlights();
+      }
     });
 
     editor.onDidChangeModelContent(() => {
@@ -270,102 +284,102 @@ function App() {
   }, [hasRun]);
 
   useEffect(() => {
-    if (selectedVar && !hoveredVar) {
+    if (selectedVar) {
       highlightVariable(selectedVar, null);
+    } else {
+      clearHighlights();
     }
   }, [selectedVar]);
 
-    // Handle wheel events for zoom and pan
   // Handle wheel events for zoom and pan
-const handleWheel = useCallback((e) => {
-  e.preventDefault();
-  
-  const container = diagramContainerRef.current;
-  const content = diagramRef.current;
-  if (!container || !content) return;
-  
-  const rect = container.getBoundingClientRect();
-  const svg = content.querySelector('svg');
-  
-  // Count nodes in the flowchart
-  const nodes = content.querySelectorAll('.node');
-  const nodeCount = nodes.length;
-  
-  // If only one box, disable all zoom/pan
-  if (nodeCount <= 1) {
-    return;
-  }
-  
-  // Get content dimensions (use SVG if available)
-  let contentWidth = rect.width;
-  let contentHeight = rect.height;
-  if (svg) {
-    const svgRect = svg.getBoundingClientRect();
-    contentWidth = svgRect.width / zoomRef.current;
-    contentHeight = svgRect.height / zoomRef.current;
-  }
-  
-  // Helper to clamp pan values
-  const clampPan = (panX, panY, zoomLevel) => {
-    const scaledWidth = contentWidth * zoomLevel;
-    const scaledHeight = contentHeight * zoomLevel;
+  const handleWheel = useCallback((e) => {
+    e.preventDefault();
     
-    // Allow panning a bit past the edge
-    const extraX = rect.width * 0.2;
-    const extraY = rect.height * -0.45;
+    const container = diagramContainerRef.current;
+    const content = diagramRef.current;
+    if (!container || !content) return;
     
-    const maxPanX = (scaledWidth / 2) + extraX;
-    const maxPanY = (scaledHeight / 2) + extraY;
+    const rect = container.getBoundingClientRect();
+    const svg = content.querySelector('svg');
     
-    return {
-      x: Math.min(maxPanX, Math.max(-maxPanX, panX)),
-      y: Math.min(maxPanY, Math.max(-maxPanY, panY))
+    // Count nodes in the flowchart
+    const nodes = content.querySelectorAll('.node');
+    const nodeCount = nodes.length;
+    
+    // If only one box, disable all zoom/pan
+    if (nodeCount <= 1) {
+      return;
+    }
+    
+    // Get content dimensions (use SVG if available)
+    let contentWidth = rect.width;
+    let contentHeight = rect.height;
+    if (svg) {
+      const svgRect = svg.getBoundingClientRect();
+      contentWidth = svgRect.width / zoomRef.current;
+      contentHeight = svgRect.height / zoomRef.current;
+    }
+    
+    // Helper to clamp pan values
+    const clampPan = (panX, panY, zoomLevel) => {
+      const scaledWidth = contentWidth * zoomLevel;
+      const scaledHeight = contentHeight * zoomLevel;
+      
+      // Allow panning a bit past the edge
+      const extraX = rect.width * 0.15;
+      const extraY = rect.height * 0.05;
+      
+      const maxPanX = (scaledWidth / 2) + extraX;
+      const maxPanY = (scaledHeight / 2) + extraY;
+      
+      return {
+        x: Math.min(maxPanX, Math.max(-maxPanX, panX)),
+        y: Math.min(maxPanY, Math.max(-maxPanY, panY))
+      };
     };
-  };
-  
-  if (e.ctrlKey || e.metaKey) {
-    // Pinch zoom (or ctrl+scroll) - centered on cursor
-    const cursorX = e.clientX - rect.left;
-    const cursorY = e.clientY - rect.top;
     
-    const centerX = rect.width / 2;
-    const centerY = rect.height / 2;
-    
-    const currentZoom = zoomRef.current;
-    const currentPan = panRef.current;
-    
-    // More sensitive zoom
-    const delta = -e.deltaY * 0.04;
-    const newZoom = Math.min(Math.max(0.5, currentZoom + delta), 5);
-    
-    // Point under cursor in content space
-    const contentX = (cursorX - centerX - currentPan.x) / currentZoom;
-    const contentY = (cursorY - centerY - currentPan.y) / currentZoom;
-    
-    // New pan to keep same content point under cursor
-    const newPanX = cursorX - centerX - contentX * newZoom;
-    const newPanY = cursorY - centerY - contentY * newZoom;
-    
-    // Clamp pan to bounds
-    const clampedPan = clampPan(newPanX, newPanY, newZoom);
-    
-    setZoom(newZoom);
-    setPan(clampedPan);
-  } else {
-    // Two-finger pan
-    const currentPan = panRef.current;
-    const currentZoom = zoomRef.current;
-    
-    const newPanX = currentPan.x - e.deltaX;
-    const newPanY = currentPan.y - e.deltaY;
-    
-    // Clamp pan to bounds
-    const clampedPan = clampPan(newPanX, newPanY, currentZoom);
-    
-    setPan(clampedPan);
-  }
-}, []);
-
+    if (e.ctrlKey || e.metaKey) {
+      // Pinch zoom (or ctrl+scroll) - centered on cursor
+      const cursorX = e.clientX - rect.left;
+      const cursorY = e.clientY - rect.top;
+      
+      const centerX = rect.width / 2;
+      const centerY = rect.height / 2;
+      
+      const currentZoom = zoomRef.current;
+      const currentPan = panRef.current;
+      
+      // More sensitive zoom
+      const delta = -e.deltaY * 0.04;
+      const newZoom = Math.min(Math.max(0.5, currentZoom + delta), 5);
+      
+      // Point under cursor in content space
+      const contentX = (cursorX - centerX - currentPan.x) / currentZoom;
+      const contentY = (cursorY - centerY - currentPan.y) / currentZoom;
+      
+      // New pan to keep same content point under cursor
+      const newPanX = cursorX - centerX - contentX * newZoom;
+      const newPanY = cursorY - centerY - contentY * newZoom;
+      
+      // Clamp pan to bounds
+      const clampedPan = clampPan(newPanX, newPanY, newZoom);
+      
+      setZoom(newZoom);
+      setPan(clampedPan);
+    } else {
+      // Two-finger pan
+      const currentPan = panRef.current;
+      const currentZoom = zoomRef.current;
+      
+      const newPanX = currentPan.x - e.deltaX;
+      const newPanY = currentPan.y - e.deltaY;
+      
+      // Clamp pan to bounds
+      const clampedPan = clampPan(newPanX, newPanY, currentZoom);
+      
+      setPan(clampedPan);
+    }
+  }, []);
 
   // Attach wheel listener to diagram container
   useEffect(() => {
@@ -387,14 +401,27 @@ const handleWheel = useCallback((e) => {
 
   const generateMermaid = (trace, scopedVar, error) => {
     let mermaidStr = `%%{init: {'theme': 'dark', 'themeVariables': { 'primaryColor': '#334155', 'primaryTextColor': '#f8fafc', 'lineColor': '#4a90d9' }}}%%
-graph TD
-`;
+  graph TD
+  `;
     const rawName = getRawVarName(scopedVar);
-
+    const varScope = getScope(scopedVar);
+    
     trace.forEach((v, i) => {
       const nodeId = `N${i}`;
-      const scopeLabel = v.function === 'global' ? '' : ` (${v.function})`;
-      const label = `${rawName} = ${mermaidSafe(v.value)}${scopeLabel}<br/>line ${v.line}`;
+      
+      // Show "(in function_name)" if assigned in a different function than the variable's scope
+      // For globals: show if assigned inside any function
+      // For locals: show if assigned in a nested function (rare)
+      let locationLabel = '';
+      const assignedIn = v.assignedIn || v.function;
+      
+      if (varScope === 'global' && assignedIn !== 'global') {
+        locationLabel = ` (in ${assignedIn})`;
+      } else if (varScope !== 'global' && assignedIn !== varScope) {
+        locationLabel = ` (in ${assignedIn})`;
+      }
+      
+      const label = `${rawName} = ${mermaidSafe(v.value)}<br/>line ${v.line}${locationLabel}`;
       mermaidStr += `${nodeId}["${label}"]\n`;
       if (i < trace.length - 1) {
         mermaidStr += `${nodeId} --> N${i + 1}\n`;
@@ -543,7 +570,7 @@ graph TD
               height="100%"
               language={language}
               theme="vs-dark"
-              defaultValue={`# Global variables
+    defaultValue={`# Global variables
 count = 0
 x = 100
 name = "global"
@@ -552,14 +579,14 @@ def outer_function():
     # Local variable that shadows global 'x'
     x = 50
     y = 10
-    
+
     def inner_function():
         # Local variable that shadows outer's 'x'
         x = 25
         z = 5
         print(f"inner: x={x}, z={z}")
         return x + z
-    
+
     result = inner_function()
     x = x + y  # modifies outer's local x
     print(f"outer: x={x}, y={y}, result={result}")
@@ -629,11 +656,11 @@ print(f"Results: outer={outer_result}, reader={reader_result}, loop={loop_result
               {activeVar && <span style={{ fontWeight: 'normal', marginLeft: '0.5rem' }}>— {getDisplayName(activeVar, allTraceData)}</span>}
               {zoom !== 1 && <span style={{ fontWeight: 'normal', marginLeft: '0.5rem', fontSize: '0.8rem', color: '#666' }}>({Math.round(zoom * 100)}%)</span>}
             </h3>
-            <div 
+            <div
               className="diagram-container"
               ref={diagramContainerRef}
             >
-              <div 
+              <div
                 ref={diagramRef}
                 className="diagram-content"
                 style={{

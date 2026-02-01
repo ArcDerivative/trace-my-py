@@ -190,6 +190,7 @@ def capture_changes(frame, line_no):
                 trace_data[scoped_key].append({
                     'line': line_no,
                     'function': scope,
+                    'assignedIn': func_name,
                     'value': v_repr
                 })
                 
