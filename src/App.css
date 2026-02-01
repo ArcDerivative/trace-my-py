@@ -209,3 +209,14 @@ html, body {
   letter-spacing: 0.5px;
   border-bottom: 1px solid #333;
 }
+
+/* Highlight for the hovered line */
+.hovered-line-highlight {
+  background-color: rgba(167, 139, 250, 0.2) !important;
+}
+
+/* Highlight for variable occurrences */
+.variable-highlight {
+  background-color: rgba(250, 204, 21, 0.4) !important;
+  border-radius: 2px;
+}

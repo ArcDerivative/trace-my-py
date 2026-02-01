@@ -19,19 +19,140 @@ function App() {
   const [language, setLanguage] = useState('python');
   const [output, setOutput] = useState('');
   const [allTraceData, setAllTraceData] = useState({});
-  const [variableName, setVariableName] = useState('');
+  const [selectedVar, setSelectedVar] = useState(''); // dropdown selection
+  const [hoveredVar, setHoveredVar] = useState(null); // hover selection (takes priority)
   const [errorMessage, setErrorMessage] = useState(null);
   const [running, setRunning] = useState(false);
 
   const editorRef = useRef(null);
+  const monacoRef = useRef(null);
   const diagramRef = useRef(null);
   const diagramIdRef = useRef(0);
+  const decorationsRef = useRef([]);
+  const lineToVarMapRef = useRef({});
 
-  const handleEditorMount = (editor) => {
-    editorRef.current = editor;
+  // The active variable is hoveredVar if set, otherwise selectedVar
+  const activeVar = hoveredVar || selectedVar;
+
+  // Build map: line number -> scoped variable name
+  const buildLineToVarMap = (traceData) => {
+    const map = {};
+    for (const [scopedVar, traces] of Object.entries(traceData)) {
+      for (const trace of traces) {
+        // Store first variable found on each line
+        if (!map[trace.line]) {
+          map[trace.line] = scopedVar;
+        }
+      }
+    }
+    return map;
   };
 
-  /* ---------------- Mermaid safety ---------------- */
+  // Update line-to-var map when trace data changes
+  useEffect(() => {
+    lineToVarMapRef.current = buildLineToVarMap(allTraceData);
+  }, [allTraceData]);
+
+  // Extract raw variable name from scoped name ("global::x" -> "x")
+  const getRawVarName = (scopedVar) => {
+    if (!scopedVar) return '';
+    const parts = scopedVar.split('::');
+    return parts[parts.length - 1];
+  };
+
+  // Clear all editor highlights
+  const clearHighlights = () => {
+    if (editorRef.current) {
+      decorationsRef.current = editorRef.current.deltaDecorations(decorationsRef.current, []);
+    }
+  };
+
+  // Highlight a line and all occurrences of a variable
+  const highlightVariable = (scopedVar, hoveredLine) => {
+    if (!editorRef.current || !monacoRef.current) return;
+
+    const editor = editorRef.current;
+    const monaco = monacoRef.current;
+    const model = editor.getModel();
+    const rawVarName = getRawVarName(scopedVar);
+
+    if (!rawVarName) {
+      clearHighlights();
+      return;
+    }
+
+    const newDecorations = [];
+
+    // 1. Highlight the hovered line (whole line background)
+    newDecorations.push({
+      range: new monaco.Range(hoveredLine, 1, hoveredLine, 1),
+      options: {
+        isWholeLine: true,
+        className: 'hovered-line-highlight'
+      }
+    });
+
+    // 2. Find and highlight all occurrences of the variable
+    const text = model.getValue();
+    const lines = text.split('\n');
+    const regex = new RegExp(`\\b${rawVarName}\\b`, 'g');
+
+    lines.forEach((lineContent, index) => {
+      const lineNum = index + 1;
+      let match;
+      // Reset regex for each line
+      regex.lastIndex = 0;
+      while ((match = regex.exec(lineContent)) !== null) {
+        newDecorations.push({
+          range: new monaco.Range(
+            lineNum,
+            match.index + 1,
+            lineNum,
+            match.index + 1 + rawVarName.length
+          ),
+          options: {
+            inlineClassName: 'variable-highlight'
+          }
+        });
+      }
+    });
+
+    decorationsRef.current = editor.deltaDecorations(decorationsRef.current, newDecorations);
+  };
+
+  // Handle mouse hover on editor
+  const handleLineHover = (lineNumber) => {
+    const scopedVar = lineToVarMapRef.current[lineNumber];
+
+    if (scopedVar) {
+      setHoveredVar(scopedVar);
+      highlightVariable(scopedVar, lineNumber);
+    } else {
+      clearHighlights();
+      setHoveredVar(null);
+    }
+  };
+
+  const handleEditorMount = (editor, monaco) => {
+    editorRef.current = editor;
+    monacoRef.current = monaco;
+
+    // Track mouse movement
+    editor.onMouseMove((e) => {
+      if (e.target && e.target.position) {
+        const lineNumber = e.target.position.lineNumber;
+        handleLineHover(lineNumber);
+      }
+    });
+
+    // Clear highlights when mouse leaves editor area
+    editor.onMouseLeave(() => {
+      clearHighlights();
+      setHoveredVar(null);
+    });
+  };
+
+  /* ---------------- Mermaid ---------------- */
   const mermaidSafe = (value) => {
     if (value == null) return 'null';
     return String(value)
@@ -54,7 +175,6 @@ function App() {
       }
     });
 
-    // Add error node if present
     if (error) {
       const lastNode = trace.length > 0 ? `N${trace.length - 1}` : null;
       const errorNode = `ERR`;
@@ -70,14 +190,14 @@ function App() {
   const renderDiagram = async () => {
     if (!diagramRef.current) return;
 
-    const trace = allTraceData[variableName] || [];
+    const trace = allTraceData[activeVar] || [];
     if (trace.length === 0 && !errorMessage) {
       diagramRef.current.innerHTML =
-        '<p style="color:#666;text-align:center;padding:2rem;">Select a variable to view its trace</p>';
+        '<p style="color:#666;text-align:center;padding:2rem;">Hover over an assignment or select a variable</p>';
       return;
     }
 
-    const diagramDef = generateMermaid(trace, variableName, errorMessage);
+    const diagramDef = generateMermaid(trace, activeVar, errorMessage);
     diagramIdRef.current += 1;
 
     try {
@@ -96,8 +216,10 @@ function App() {
     setRunning(true);
     setOutput('Running...\n');
     setAllTraceData({});
-    setVariableName('');
+    setSelectedVar('');
+    setHoveredVar(null);
     setErrorMessage(null);
+    clearHighlights();
     if (diagramRef.current) diagramRef.current.innerHTML = '';
 
     try {
@@ -114,9 +236,12 @@ function App() {
     setRunning(false);
   };
 
+  // Re-render diagram when active variable changes
   useEffect(() => {
-    if (variableName) renderDiagram();
-  }, [variableName, allTraceData, errorMessage]);
+    if (activeVar) {
+      renderDiagram();
+    }
+  }, [activeVar, allTraceData, errorMessage]);
 
   return (
     <div className="app-container">
@@ -135,8 +260,8 @@ function App() {
         <label className="variable-input">
           Variable to trace:
           <select
-            value={variableName}
-            onChange={(e) => setVariableName(e.target.value)}
+            value={selectedVar}
+            onChange={(e) => setSelectedVar(e.target.value)}
             style={{ marginLeft: '0.5rem' }}
           >
             <option value="">-- select --</option>
@@ -181,7 +306,10 @@ print(x)`}
             <pre className="output-pre">{output}</pre>
           </div>
           <div className="diagram-panel">
-            <h3 className="panel-header">Variable Flow Diagram</h3>
+            <h3 className="panel-header">
+              Variable Flow Diagram
+              {activeVar && <span style={{ fontWeight: 'normal', marginLeft: '0.5rem' }}>({activeVar})</span>}
+            </h3>
             <div className="diagram-container" ref={diagramRef}></div>
           </div>
         </div>
@@ -191,143 +319,3 @@ print(x)`}
 }
 
 export default App;
-
-
-
-
-
-
-// // App.jsx
-// import { useState, useRef } from 'react';
-// import Editor from '@monaco-editor/react';
-// import mermaid from 'mermaid';
-// import './App.css';
-
-// mermaid.initialize({ startOnLoad: false });
-
-// function App() {
-//   const [language, setLanguage] = useState('python');
-//   const [output, setOutput] = useState('');
-//   const [variableName, setVariableName] = useState('x');
-//   const diagramRef = useRef(null);
-
-//   const [running, setRunning] = useState(false);
-
-//   const runCode = () => {
-//     setOutput('Run clicked (stub)');
-//   };
-
-// const handleEditorMount = () => {};
-
-//   const variableTrace = [
-//     { line: 1, function: 'main', value: 0 },
-//     { line: 2, function: 'main', value: 1 },
-//     { line: 3, function: 'main', value: 3 },
-//     { line: 4, function: 'main', value: 6 },
-//     { line: 5, function: 'main', value: 10 }
-//   ];
-
-//   const generateMermaid = (trace) => {
-//   let mermaidStr = 'graph TD\n'; // graph header
-
-//   trace.forEach((v, i) => {
-//     const nodeId = `L${v.line}`; // ONLY letters/numbers
-//     const label = `${v.value} (line ${v.line})`; // label with parentheses is fine
-//     mermaidStr += `${nodeId}["${label}"]\n`; // wrap label in quotes
-//     const next = trace[i + 1];
-//     if (next) {
-//       mermaidStr += `${nodeId} --> L${next.line}\n`; // edge must use IDs only
-//     }
-//   });
-
-//   return mermaidStr;
-// };
-
-//   const renderTestDiagram = () => {
-//   if (!diagramRef.current) return;
-
-//   const diagramDef = generateMermaid(variableTrace);
-
-//   // Correctly render SVG
-//   const id = `diagram-${Date.now()}`;
-
-//   mermaid.render(id, diagramDef)
-//     .then((obj) => {
-//       diagramRef.current.innerHTML = obj.svg; // IMPORTANT: use obj.svg
-//     })
-//     .catch((err) => {
-//       setOutput(`Mermaid render error: ${err}`);
-//     });
-
-//   setOutput('Test diagram rendered (fixed example case).');
-// };
-
-//   return (
-//     <div className="app-container">
-//       <h1>Tracer - Test Diagram</h1>
-//       <div style={{ marginBottom: '1rem' }}>
-//         <button onClick={renderTestDiagram} style={{ marginRight: '1rem' }}>
-//           Render Test Diagram
-//         </button>
-//         <label>
-//           Variable to trace:
-//           <input
-//             type="text"
-//             value={variableName}
-//             onChange={(e) => setVariableName(e.target.value)}
-//             style={{ marginLeft: '0.3rem' }}
-//           />
-//         </label>
-//       </div>
-
-//       <div className="controls">
-//         <button
-//           onClick={runCode}
-//           disabled={running}
-//           className="run-button"
-//         >
-//           {running ? 'Running...' : 'Run'}
-//         </button>
-
-//         {/* Language selector */}
-//         <div className="language-selector">
-//           <label>Language:</label>
-//           <select
-//             value={language}
-//             onChange={(e) => setLanguage(e.target.value)}
-//           >
-//             <option value="python">Python</option>
-//           </select>
-//         </div>
-//       </div>
-
-
-//       <div style={{ display: 'flex', gap: '1rem' }}>
-//         {/* Editor */}
-//         <div style={{ flex: 1 }}>
-//           <Editor
-//             height="100%"
-//             language={language}
-//             theme="vs-dark"
-//             onMount={handleEditorMount}
-//           />
-//         </div>
-
-//         {/* Output + Diagram */}
-//         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-//           <div style={{ background: '#1e1e1e', color: '#fff', padding: '1rem', minHeight: '50px' }}>
-//             {output}
-//           </div>
-//           <div
-//             ref={diagramRef}
-//             style={{ border: '1px solid #333', padding: '1rem', minHeight: '300px', overflow: 'auto' }}
-//           ></div>
-//         </div>
-//       </div>
-//     </div>
-//   );
-// }
-
-// export default App;
-
-
