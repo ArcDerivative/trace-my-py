@@ -11,7 +11,12 @@ mermaid.initialize({
     background: '#1e293b',
     primaryColor: '#334155',
     primaryTextColor: '#f8fafc',
-    lineColor: '#a78bfa'
+    lineColor: '#4a90d9'
+  },
+  flowchart: {
+    curve: 'basis',
+    nodeSpacing: 50,
+    rankSpacing: 50
   }
 });
 
@@ -165,7 +170,9 @@ function App() {
   };
 
   const generateMermaid = (trace, scopedVar, error) => {
-    let mermaidStr = 'graph TD\n';
+    let mermaidStr = `%%{init: {'theme': 'dark', 'themeVariables': { 'primaryColor': '#334155', 'primaryTextColor': '#f8fafc', 'lineColor': '#22d3ee' }}}%%
+  graph TD
+  `;
     const rawName = getRawVarName(scopedVar);
 
     trace.forEach((v, i) => {
@@ -173,6 +180,7 @@ function App() {
       const scopeLabel = v.function === 'global' ? '' : ` (${v.function})`;
       const label = `${rawName} = ${mermaidSafe(v.value)}${scopeLabel}<br/>line ${v.line}`;
       mermaidStr += `${nodeId}["${label}"]\n`;
+      mermaidStr += `style ${nodeId} rx:10,ry:10\n`;
       if (i < trace.length - 1) {
         mermaidStr += `${nodeId} --> N${i + 1}\n`;
       }
@@ -182,6 +190,7 @@ function App() {
       const lastNode = trace.length > 0 ? `N${trace.length - 1}` : null;
       const errorNode = `ERR`;
       mermaidStr += `${errorNode}["❌ Error<br/>${mermaidSafe(error)}"]\n`;
+      mermaidStr += `style ${errorNode} rx:10,ry:10\n`;
       if (lastNode) {
         mermaidStr += `${lastNode} --> ${errorNode}\n`;
       }
@@ -224,10 +233,17 @@ function App() {
         diagramDef
       );
       diagramRef.current.innerHTML = svg;
+      
+      // Round the corners of all rect elements
+      const rects = diagramRef.current.querySelectorAll('rect.basic');
+      rects.forEach((rect) => {
+        rect.setAttribute('rx', '10');
+        rect.setAttribute('ry', '10');
+      });
     } catch (err) {
       diagramRef.current.innerHTML =
         `<pre style="color:red">Mermaid error:\n${err.message}</pre>`;
-    }
+    } 
   };
 
   const handleRun = async () => {

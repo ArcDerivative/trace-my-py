@@ -228,3 +228,19 @@ html, body {
   text-align: center;
   padding: 2rem;
 }
+
+/* Thicker, bluer arrows */
+.diagram-container .flowchart-link {
+  stroke: #4a90d9 !important;
+  stroke-width: 5px !important;
+}
+
+.diagram-container marker path {
+  fill: #4a90d9 !important;
+  stroke: #4a90d9 !important;
+}
+
+.diagram-container .node rect {
+  rx: 10 !important;
+  ry: 10 !important;
+}
