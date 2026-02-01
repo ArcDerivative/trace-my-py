@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import Editor from '@monaco-editor/react';
 import mermaid from 'mermaid';
 import { runAndTrace } from './tracer';
@@ -27,12 +27,10 @@ const getDisplayName = (scopedVar, allTraceData) => {
   const scope = parts[0];
   const varName = parts[1];
   
-  // Local variable: always show (function_name)
   if (scope !== 'global') {
     return `${varName} (${scope})`;
   }
   
-  // Global variable: check if there's a local with the same name
   const hasLocalWithSameName = Object.keys(allTraceData).some((key) => {
     const keyParts = key.split('::');
     return keyParts[0] !== 'global' && keyParts[1] === varName;
@@ -42,7 +40,6 @@ const getDisplayName = (scopedVar, allTraceData) => {
     return `${varName} (global)`;
   }
   
-  // No conflict, just show variable name
   return varName;
 };
 
@@ -69,9 +66,16 @@ function App() {
   const [running, setRunning] = useState(false);
   const [hasRun, setHasRun] = useState(false);
 
+  // Zoom and pan state
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const zoomRef = useRef(1);
+  const panRef = useRef({ x: 0, y: 0 });
+
   const editorRef = useRef(null);
   const monacoRef = useRef(null);
   const diagramRef = useRef(null);
+  const diagramContainerRef = useRef(null);
   const diagramIdRef = useRef(0);
   const decorationsRef = useRef([]);
   const lineToVarMapRef = useRef({});
@@ -81,6 +85,23 @@ function App() {
   const activeVar = hoveredVar || selectedVar;
   const hasTraceData = Object.keys(allTraceData).length > 0;
   const hasSyntaxError = hasRun && errorMessage && !hasTraceData;
+
+  // Keep refs in sync with state
+  useEffect(() => {
+    zoomRef.current = zoom;
+  }, [zoom]);
+
+  useEffect(() => {
+    panRef.current = pan;
+  }, [pan]);
+
+  // Reset zoom and pan when diagram changes
+  const resetView = useCallback(() => {
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+    zoomRef.current = 1;
+    panRef.current = { x: 0, y: 0 };
+  }, []);
 
   useEffect(() => {
     traceDataRef.current = allTraceData;
@@ -124,6 +145,7 @@ function App() {
     lineToVarMapRef.current = {};
     traceDataRef.current = {};
     scopeInfoRef.current = { lineToScope: {}, scopeToLocals: {} };
+    resetView();
   };
 
   const shouldHighlightOnLine = (scopedVar, lineNum) => {
@@ -253,6 +275,60 @@ function App() {
     }
   }, [selectedVar]);
 
+  // Handle wheel events for zoom and pan
+  const handleWheel = useCallback((e) => {
+    e.preventDefault();
+    
+    if (e.ctrlKey || e.metaKey) {
+      // Pinch zoom (or ctrl+scroll) - centered on cursor
+      const container = diagramContainerRef.current;
+      if (!container) return;
+      
+      const rect = container.getBoundingClientRect();
+      const cursorX = e.clientX - rect.left;
+      const cursorY = e.clientY - rect.top;
+      
+      // Get center of container
+      const centerX = rect.width / 2;
+      const centerY = rect.height / 2;
+      
+      // Current values from refs
+      const currentZoom = zoomRef.current;
+      const currentPan = panRef.current;
+      
+      // Calculate new zoom
+      const delta = -e.deltaY * 0.01;
+      const newZoom = Math.min(Math.max(0.25, currentZoom + delta), 4);
+      const scaleFactor = newZoom / currentZoom;
+      
+      // Point under cursor in content space (accounting for center origin)
+      const contentX = (cursorX - centerX - currentPan.x) / currentZoom;
+      const contentY = (cursorY - centerY - currentPan.y) / currentZoom;
+      
+      // New pan to keep same content point under cursor
+      const newPanX = cursorX - centerX - contentX * newZoom;
+      const newPanY = cursorY - centerY - contentY * newZoom;
+      
+      setZoom(newZoom);
+      setPan({ x: newPanX, y: newPanY });
+    } else {
+      // Two-finger pan
+      setPan(prevPan => ({
+        x: prevPan.x - e.deltaX,
+        y: prevPan.y - e.deltaY
+      }));
+    }
+  }, []);
+
+  // Attach wheel listener to diagram container
+  useEffect(() => {
+    const container = diagramContainerRef.current;
+    if (container) {
+      container.addEventListener('wheel', handleWheel, { passive: false });
+      return () => container.removeEventListener('wheel', handleWheel);
+    }
+  }, [handleWheel]);
+
   const mermaidSafe = (value) => {
     if (value == null) return 'null';
     return String(value)
@@ -296,12 +372,14 @@ graph TD
     if (!hasRun) {
       diagramRef.current.innerHTML =
         '<p class="diagram-placeholder">code must be run :)</p>';
+      resetView();
       return;
     }
 
     if (hasSyntaxError) {
       diagramRef.current.innerHTML =
         '<p class="diagram-placeholder">code must be run without syntax errors :))</p>';
+      resetView();
       return;
     }
 
@@ -309,6 +387,7 @@ graph TD
     if (trace.length === 0 && !errorMessage) {
       diagramRef.current.innerHTML =
         '<p class="diagram-placeholder">Hover over an assignment or select a variable</p>';
+      resetView();
       return;
     }
 
@@ -327,6 +406,9 @@ graph TD
         rect.setAttribute('rx', '10');
         rect.setAttribute('ry', '10');
       });
+      
+      // Reset view when new diagram is rendered
+      resetView();
     } catch (err) {
       diagramRef.current.innerHTML =
         `<pre style="color:red">Mermaid error:\n${err.message}</pre>`;
@@ -343,6 +425,7 @@ graph TD
     setErrorMessage(null);
     setHasRun(false);
     clearHighlights();
+    resetView();
     if (diagramRef.current) diagramRef.current.innerHTML = '';
 
     try {
@@ -445,8 +528,22 @@ print(f"global x is still {x}")`}
             <h3 className="panel-header">
               Variable Flow
               {activeVar && <span style={{ fontWeight: 'normal', marginLeft: '0.5rem' }}>— {getDisplayName(activeVar, allTraceData)}</span>}
+              {zoom !== 1 && <span style={{ fontWeight: 'normal', marginLeft: '0.5rem', fontSize: '0.8rem', color: '#666' }}>({Math.round(zoom * 100)}%)</span>}
             </h3>
-            <div className="diagram-container" ref={diagramRef}></div>
+            <div 
+              className="diagram-container"
+              ref={diagramContainerRef}
+            >
+              <div 
+                ref={diagramRef}
+                className="diagram-content"
+                style={{
+                  transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+                  transformOrigin: 'center center',
+                  transition: 'none'
+                }}
+              />
+            </div>
           </div>
         </div>
       </div>
