@@ -15,11 +15,12 @@ html, body {
   background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
   color: #fff;
 }
-
 .header {
   display: flex;
+  justify-content: center;
   align-items: center;
-  gap: 1.5rem;
+  position: relative;
+  width: 100%;
   margin-bottom: 1rem;
 }
 
@@ -31,8 +32,8 @@ html, body {
 }
 
 .app-title {
-  margin-left: 410px;
-  flex: 1;
+  text-align: center;
+  margin: 0;
   color: #fff;
   font-size: 3rem;
   background: linear-gradient(90deg, #00d4ff, #a78bfa);

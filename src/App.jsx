@@ -424,8 +424,8 @@ function App() {
 
   const generateMermaid = (trace, scopedVar, error) => {
     let mermaidStr = `%%{init: {'theme': 'dark', 'themeVariables': { 'primaryColor': '#334155', 'primaryTextColor': '#f8fafc', 'lineColor': '#4a90d9' }}}%%
-graph TD
-`;
+  graph TD
+  `;
     const rawName = getRawVarName(scopedVar);
     const varScope = getScope(scopedVar);
     
@@ -433,6 +433,8 @@ graph TD
       const nodeId = `N${i}`;
       
       // Show "(in function_name)" if assigned in a different function than the variable's scope
+      // For globals: show if assigned inside any function
+      // For locals: show if assigned in a nested function (rare)
       let locationLabel = '';
       const assignedIn = v.assignedIn || v.function;
       
@@ -546,7 +548,10 @@ graph TD
 
   return (
     <div className="app-container">
-      <h1 className="app-title">Variable Tracer</h1>
+      <div className="header">
+        <img src="/glassbox-logo.png" alt="GlassBox Logo" className="logo" />
+        <h1 className="app-title">Variable Tracer</h1>
+      </div>
 
       {/* Controls */}
       <div className="controls">
@@ -626,11 +631,11 @@ print(f"fib(3) = {fib(3)}, additions: {adds}")`}
               {activeVar && <span style={{ fontWeight: 'normal', marginLeft: '0.5rem' }}>— {getDisplayName(activeVar, allTraceData)}</span>}
               {zoom !== 1 && <span style={{ fontWeight: 'normal', marginLeft: '0.5rem', fontSize: '0.8rem', color: '#666' }}>({Math.round(zoom * 100)}%)</span>}
             </h3>
-            <div 
+            <div
               className="diagram-container"
               ref={diagramContainerRef}
             >
-              <div 
+              <div
                 ref={diagramRef}
                 className="diagram-content"
                 style={{
