@@ -20,16 +20,30 @@ mermaid.initialize({
   }
 });
 
-const getDisplayName = (scopedVar) => {
+const getDisplayName = (scopedVar, allTraceData) => {
   if (!scopedVar) return '';
   const parts = scopedVar.split('::');
   if (parts.length < 2) return scopedVar;
   const scope = parts[0];
   const varName = parts[1];
-  if (scope === 'global') {
-    return varName;
+  
+  // Local variable: always show (function_name)
+  if (scope !== 'global') {
+    return `${varName} (${scope})`;
   }
-  return `${varName} (${scope})`;
+  
+  // Global variable: check if there's a local with the same name
+  const hasLocalWithSameName = Object.keys(allTraceData).some((key) => {
+    const keyParts = key.split('::');
+    return keyParts[0] !== 'global' && keyParts[1] === varName;
+  });
+  
+  if (hasLocalWithSameName) {
+    return `${varName} (global)`;
+  }
+  
+  // No conflict, just show variable name
+  return varName;
 };
 
 const getRawVarName = (scopedVar) => {
@@ -112,12 +126,6 @@ function App() {
     scopeInfoRef.current = { lineToScope: {}, scopeToLocals: {} };
   };
 
-  /**
-   * Determines if a variable should be highlighted on a given line.
-   * 
-   * For `foo::x` (local variable): highlight only on lines inside `foo`
-   * For `global::x`: highlight on lines in global scope OR in functions that don't shadow `x`
-   */
   const shouldHighlightOnLine = (scopedVar, lineNum) => {
     const { lineToScope, scopeToLocals } = scopeInfoRef.current;
     const varName = getRawVarName(scopedVar);
@@ -126,16 +134,12 @@ function App() {
     const lineScope = lineToScope[String(lineNum)] || 'global';
     
     if (varScope === 'global') {
-      // Global variable: highlight if line is in global scope
-      // OR if line is in a function that doesn't have this var as local
       if (lineScope === 'global') {
         return true;
       }
-      // Check if the function shadows this variable
       const functionLocals = scopeToLocals[lineScope] || [];
       return !functionLocals.includes(varName);
     } else {
-      // Local variable: only highlight if line is in the same function
       return lineScope === varScope;
     }
   };
@@ -155,7 +159,6 @@ function App() {
 
     const newDecorations = [];
 
-    // Highlight the hovered line
     if (hoveredLine) {
       newDecorations.push({
         range: new monaco.Range(hoveredLine, 1, hoveredLine, 1),
@@ -166,7 +169,6 @@ function App() {
       });
     }
 
-    // Find and highlight variable occurrences based on scope rules
     const text = model.getValue();
     const lines = text.split('\n');
     const regex = new RegExp(`\\b${rawVarName}\\b`, 'g');
@@ -174,7 +176,6 @@ function App() {
     lines.forEach((lineContent, index) => {
       const lineNum = index + 1;
       
-      // Check if we should highlight on this line based on scope
       if (!shouldHighlightOnLine(scopedVar, lineNum)) {
         return;
       }
@@ -246,7 +247,6 @@ function App() {
     }
   }, [hasRun]);
 
-  // Re-highlight when selected var changes via dropdown
   useEffect(() => {
     if (selectedVar && !hoveredVar) {
       highlightVariable(selectedVar, null);
@@ -322,7 +322,6 @@ graph TD
       );
       diagramRef.current.innerHTML = svg;
 
-      // Round the corners
       const rects = diagramRef.current.querySelectorAll('.node rect, .label-container');
       rects.forEach((rect) => {
         rect.setAttribute('rx', '10');
@@ -390,7 +389,7 @@ graph TD
           >
             <option value="">-- select --</option>
             {Object.keys(allTraceData).map((v) => (
-              <option key={v} value={v}>{getDisplayName(v)}</option>
+              <option key={v} value={v}>{getDisplayName(v, allTraceData)}</option>
             ))}
           </select>
         </label>
@@ -443,7 +442,7 @@ print(f"global x is still {x}")`}
           <div className="diagram-panel">
             <h3 className="panel-header">
               Variable Flow
-              {activeVar && <span style={{ fontWeight: 'normal', marginLeft: '0.5rem' }}>— {getDisplayName(activeVar)}</span>}
+              {activeVar && <span style={{ fontWeight: 'normal', marginLeft: '0.5rem' }}>— {getDisplayName(activeVar, allTraceData)}</span>}
             </h3>
             <div className="diagram-container" ref={diagramRef}></div>
           </div>
