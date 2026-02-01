@@ -437,7 +437,9 @@ print(f"global x is still {x}")`}
         <div className="output-diagram-panel">
           <div className="output-panel">
             <h3 className="panel-header">Console Output</h3>
-            <pre className="output-pre">{output}</pre>
+            <div className="output-container">
+              <pre className="output-pre">{output}</pre>
+            </div>
           </div>
           <div className="diagram-panel">
             <h3 className="panel-header">
