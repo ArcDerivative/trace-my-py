@@ -276,85 +276,97 @@ function App() {
   }, [selectedVar]);
 
     // Handle wheel events for zoom and pan
-  const handleWheel = useCallback((e) => {
-    e.preventDefault();
+  // Handle wheel events for zoom and pan
+const handleWheel = useCallback((e) => {
+  e.preventDefault();
+  
+  const container = diagramContainerRef.current;
+  const content = diagramRef.current;
+  if (!container || !content) return;
+  
+  const rect = container.getBoundingClientRect();
+  const svg = content.querySelector('svg');
+  
+  // Count nodes in the flowchart
+  const nodes = content.querySelectorAll('.node');
+  const nodeCount = nodes.length;
+  
+  // If only one box, disable all zoom/pan
+  if (nodeCount <= 1) {
+    return;
+  }
+  
+  // Get content dimensions (use SVG if available)
+  let contentWidth = rect.width;
+  let contentHeight = rect.height;
+  if (svg) {
+    const svgRect = svg.getBoundingClientRect();
+    contentWidth = svgRect.width / zoomRef.current;
+    contentHeight = svgRect.height / zoomRef.current;
+  }
+  
+  // Helper to clamp pan values
+  const clampPan = (panX, panY, zoomLevel) => {
+    const scaledWidth = contentWidth * zoomLevel;
+    const scaledHeight = contentHeight * zoomLevel;
     
-    const container = diagramContainerRef.current;
-    const content = diagramRef.current;
-    if (!container || !content) return;
+    // Allow panning a bit past the edge
+    const extraX = rect.width * 0.15;
+    const extraY = rect.height * 0.05;
     
-    const rect = container.getBoundingClientRect();
-    const svg = content.querySelector('svg');
+    const maxPanX = (scaledWidth / 2) + extraX;
+    const maxPanY = (scaledHeight / 2) + extraY;
     
-    // Get content dimensions (use SVG if available)
-    let contentWidth = rect.width;
-    let contentHeight = rect.height;
-    if (svg) {
-      const svgRect = svg.getBoundingClientRect();
-      contentWidth = svgRect.width / zoomRef.current;
-      contentHeight = svgRect.height / zoomRef.current;
-    }
-    
-    // Helper to clamp pan values
-    const clampPan = (panX, panY, zoomLevel) => {
-      const scaledWidth = contentWidth * zoomLevel;
-      const scaledHeight = contentHeight * zoomLevel;
-      
-      // Allow panning a bit past the edge (30% of container size)
-      const extraX = rect.width * 0.2;
-      const extraY = rect.height * -0.35;
-      
-      const maxPanX = (scaledWidth / 2) + extraX;
-      const maxPanY = (scaledHeight / 2) + extraY;
-      
-      return {
-        x: Math.min(maxPanX, Math.max(-maxPanX, panX)),
-        y: Math.min(maxPanY, Math.max(-maxPanY, panY))
-      };
+    return {
+      x: Math.min(maxPanX, Math.max(-maxPanX, panX)),
+      y: Math.min(maxPanY, Math.max(-maxPanY, panY))
     };
+  };
+  
+  if (e.ctrlKey || e.metaKey) {
+    // Pinch zoom (or ctrl+scroll) - centered on cursor
+    const cursorX = e.clientX - rect.left;
+    const cursorY = e.clientY - rect.top;
     
-    if (e.ctrlKey || e.metaKey) {
-      // Pinch zoom (or ctrl+scroll) - centered on cursor
-      const cursorX = e.clientX - rect.left;
-      const cursorY = e.clientY - rect.top;
-      
-      const centerX = rect.width / 2;
-      const centerY = rect.height / 2;
-      
-      const currentZoom = zoomRef.current;
-      const currentPan = panRef.current;
-      
-      // More sensitive zoom
-      const delta = -e.deltaY * 0.04;
-      const newZoom = Math.min(Math.max(0.5, currentZoom + delta), 5);
-      
-      // Point under cursor in content space
-      const contentX = (cursorX - centerX - currentPan.x) / currentZoom;
-      const contentY = (cursorY - centerY - currentPan.y) / currentZoom;
-      
-      // New pan to keep same content point under cursor
-      const newPanX = cursorX - centerX - contentX * newZoom;
-      const newPanY = cursorY - centerY - contentY * newZoom;
-      
-      // Clamp pan to bounds
-      const clampedPan = clampPan(newPanX, newPanY, newZoom);
-      
-      setZoom(newZoom);
-      setPan(clampedPan);
-    } else {
-      // Two-finger pan
-      const currentPan = panRef.current;
-      const currentZoom = zoomRef.current;
-      
-      const newPanX = currentPan.x - e.deltaX;
-      const newPanY = currentPan.y - e.deltaY;
-      
-      // Clamp pan to bounds
-      const clampedPan = clampPan(newPanX, newPanY, currentZoom);
-      
-      setPan(clampedPan);
-    }
-  }, []);
+    const centerX = rect.width / 2;
+    const centerY = rect.height / 2;
+    
+    const currentZoom = zoomRef.current;
+    const currentPan = panRef.current;
+    
+    // More sensitive zoom
+    const delta = -e.deltaY * 0.04;
+    const newZoom = Math.min(Math.max(0.5, currentZoom + delta), 5);
+    
+    // Point under cursor in content space
+    const contentX = (cursorX - centerX - currentPan.x) / currentZoom;
+    const contentY = (cursorY - centerY - currentPan.y) / currentZoom;
+    
+    // New pan to keep same content point under cursor
+    const newPanX = cursorX - centerX - contentX * newZoom;
+    const newPanY = cursorY - centerY - contentY * newZoom;
+    
+    // Clamp pan to bounds
+    const clampedPan = clampPan(newPanX, newPanY, newZoom);
+    
+    setZoom(newZoom);
+    setPan(clampedPan);
+  } else {
+    // Two-finger pan
+    const currentPan = panRef.current;
+    const currentZoom = zoomRef.current;
+    
+    const newPanX = currentPan.x - e.deltaX;
+    const newPanY = currentPan.y - e.deltaY;
+    
+    // Clamp pan to bounds
+    const clampedPan = clampPan(newPanX, newPanY, currentZoom);
+    
+    setPan(clampedPan);
+  }
+}, []);
+
+
   // Attach wheel listener to diagram container
   useEffect(() => {
     const container = diagramContainerRef.current;
