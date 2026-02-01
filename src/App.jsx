@@ -59,7 +59,7 @@ function App() {
   const [language, setLanguage] = useState('python');
   const [output, setOutput] = useState('');
   const [allTraceData, setAllTraceData] = useState({});
-  const [scopeInfo, setScopeInfo] = useState({ lineToScope: {}, scopeToLocals: {} });
+  const [scopeInfo, setScopeInfo] = useState({ lineToScope: {}, scopeToLocals: {}, globalDeclarations: {} });
   const [selectedVar, setSelectedVar] = useState('');
   const [hoveredVar, setHoveredVar] = useState(null);
   const [errorMessage, setErrorMessage] = useState(null);
@@ -80,7 +80,7 @@ function App() {
   const decorationsRef = useRef([]);
   const lineToVarMapRef = useRef({});
   const traceDataRef = useRef({});
-  const scopeInfoRef = useRef({ lineToScope: {}, scopeToLocals: {} });
+  const scopeInfoRef = useRef({ lineToScope: {}, scopeToLocals: {}, globalDeclarations: {} });
   const selectedVarRef = useRef('');
 
   const activeVar = hoveredVar || selectedVar;
@@ -116,8 +116,10 @@ function App() {
     scopeInfoRef.current = scopeInfo;
   }, [scopeInfo]);
 
-  const buildLineToVarMap = (traceData) => {
+  const buildLineToVarMap = (traceData, scopeInfo) => {
     const map = {};
+    
+    // Add lines where variables are assigned
     for (const [scopedVar, traces] of Object.entries(traceData)) {
       for (const trace of traces) {
         if (!map[trace.line]) {
@@ -125,12 +127,27 @@ function App() {
         }
       }
     }
+    
+    // Add lines with global declarations
+    const globalDeclarations = scopeInfo.globalDeclarations || {};
+    for (const [line, varNames] of Object.entries(globalDeclarations)) {
+      if (!map[line] && varNames.length > 0) {
+        // Map to the first global variable declared on this line
+        const varName = varNames[0];
+        const scopedKey = `global::${varName}`;
+        // Only add if this variable was actually traced
+        if (traceData[scopedKey]) {
+          map[line] = scopedKey;
+        }
+      }
+    }
+    
     return map;
   };
 
   useEffect(() => {
-    lineToVarMapRef.current = buildLineToVarMap(allTraceData);
-  }, [allTraceData]);
+    lineToVarMapRef.current = buildLineToVarMap(allTraceData, scopeInfo);
+  }, [allTraceData, scopeInfo]);
 
   const clearHighlights = () => {
     if (editorRef.current) {
@@ -140,7 +157,7 @@ function App() {
 
   const invalidateTrace = () => {
     setAllTraceData({});
-    setScopeInfo({ lineToScope: {}, scopeToLocals: {} });
+    setScopeInfo({ lineToScope: {}, scopeToLocals: {}, globalDeclarations: {} });
     setSelectedVar('');
     setHoveredVar(null);
     setErrorMessage(null);
@@ -149,17 +166,23 @@ function App() {
     clearHighlights();
     lineToVarMapRef.current = {};
     traceDataRef.current = {};
-    scopeInfoRef.current = { lineToScope: {}, scopeToLocals: {} };
+    scopeInfoRef.current = { lineToScope: {}, scopeToLocals: {}, globalDeclarations: {} };
     selectedVarRef.current = '';
     resetView();
   };
 
   const shouldHighlightOnLine = (scopedVar, lineNum) => {
-    const { lineToScope, scopeToLocals } = scopeInfoRef.current;
+    const { lineToScope, scopeToLocals, globalDeclarations } = scopeInfoRef.current;
     const varName = getRawVarName(scopedVar);
     const varScope = getScope(scopedVar);
     
     const lineScope = lineToScope[String(lineNum)] || 'global';
+    
+    // Check if this line has a global declaration for this variable
+    const declaredGlobals = globalDeclarations[String(lineNum)] || [];
+    if (varScope === 'global' && declaredGlobals.includes(varName)) {
+      return true;
+    }
     
     if (varScope === 'global') {
       if (lineScope === 'global') {
@@ -401,8 +424,8 @@ function App() {
 
   const generateMermaid = (trace, scopedVar, error) => {
     let mermaidStr = `%%{init: {'theme': 'dark', 'themeVariables': { 'primaryColor': '#334155', 'primaryTextColor': '#f8fafc', 'lineColor': '#4a90d9' }}}%%
-  graph TD
-  `;
+graph TD
+`;
     const rawName = getRawVarName(scopedVar);
     const varScope = getScope(scopedVar);
     
@@ -410,8 +433,6 @@ function App() {
       const nodeId = `N${i}`;
       
       // Show "(in function_name)" if assigned in a different function than the variable's scope
-      // For globals: show if assigned inside any function
-      // For locals: show if assigned in a nested function (rare)
       let locationLabel = '';
       const assignedIn = v.assignedIn || v.function;
       
@@ -493,7 +514,7 @@ function App() {
     setRunning(true);
     setOutput('Running...\n');
     setAllTraceData({});
-    setScopeInfo({ lineToScope: {}, scopeToLocals: {} });
+    setScopeInfo({ lineToScope: {}, scopeToLocals: {}, globalDeclarations: {} });
     setSelectedVar('');
     setHoveredVar(null);
     setErrorMessage(null);
@@ -507,7 +528,7 @@ function App() {
       const { output: progOutput, traceData, errorMessage, scopeInfo } = await runAndTrace(code);
 
       setAllTraceData(traceData);
-      setScopeInfo(scopeInfo || { lineToScope: {}, scopeToLocals: {} });
+      setScopeInfo(scopeInfo || { lineToScope: {}, scopeToLocals: {}, globalDeclarations: {} });
       setErrorMessage(errorMessage || null);
       setOutput(progOutput || '(no output)');
       setHasRun(true);
@@ -525,10 +546,7 @@ function App() {
 
   return (
     <div className="app-container">
-      <div className="header">
-      <img src="/glassbox-logo.png" alt="GlassBox Logo" className="logo" />
       <h1 className="app-title">Variable Tracer</h1>
-    </div>
 
       {/* Controls */}
       <div className="controls">
@@ -573,73 +591,22 @@ function App() {
               height="100%"
               language={language}
               theme="vs-dark"
-    defaultValue={`# Global variables
-count = 0
-x = 100
-name = "global"
+              defaultValue={`adds = 0
 
-def outer_function():
-    # Local variable that shadows global 'x'
-    x = 50
-    y = 10
+def fib(n):
+    adds = 0  # Reset counter for this call
+    return helper(n)
 
-    def inner_function():
-        # Local variable that shadows outer's 'x'
-        x = 25
-        z = 5
-        print(f"inner: x={x}, z={z}")
-        return x + z
+def helper(n):
+    global adds
+    if n <= 1:
+        return n
+    adds = adds + 1
+    return helper(n-1) + helper(n-2)
 
-    result = inner_function()
-    x = x + y  # modifies outer's local x
-    print(f"outer: x={x}, y={y}, result={result}")
-    return x
 
-def modifier():
-    # Accesses and modifies global 'count'
-    global count
-    count = count + 1
-    step = 10
-    print(f"modifier: count={count}, step={step}")
-    return step
-
-def reader():
-    # Reads global 'x' without shadowing
-    temp = x + 5
-    print(f"reader: using global x={x}, temp={temp}")
-    return temp
-
-def loop_example():
-    # Loop variable 'i' and accumulator 'total'
-    total = 0
-    for i in range(5):
-        total = total + i
-        x = i * 2  # local 'x' shadows global
-    print(f"loop: total={total}, final i={i}, local x={x}")
-    return total
-
-def multi_assign():
-    # Multiple variables, some shadow, some don't
-    a = 1
-    b = 2
-    name = "local"  # shadows global 'name'
-    a = a + b
-    b = b * 2
-    print(f"multi: a={a}, b={b}, name={name}, global count={count}")
-    return a + b
-
-# Main execution
-print(f"Start: count={count}, x={x}, name={name}")
-
-modifier()
-modifier()
-outer_result = outer_function()
-reader_result = reader()
-loop_result = loop_example()
-multi_result = multi_assign()
-
-print(f"End: count={count}, x={x}, name={name}")
-print(f"Results: outer={outer_result}, reader={reader_result}, loop={loop_result}, multi={multi_result}")`}
+print(f"fib(3) = {fib(3)}, additions: {adds}")
+print(f"fib(3) = {fib(3)}, additions: {adds}")`}
               onMount={handleEditorMount}
             />
           </div>
@@ -659,11 +626,11 @@ print(f"Results: outer={outer_result}, reader={reader_result}, loop={loop_result
               {activeVar && <span style={{ fontWeight: 'normal', marginLeft: '0.5rem' }}>— {getDisplayName(activeVar, allTraceData)}</span>}
               {zoom !== 1 && <span style={{ fontWeight: 'normal', marginLeft: '0.5rem', fontSize: '0.8rem', color: '#666' }}>({Math.round(zoom * 100)}%)</span>}
             </h3>
-            <div
+            <div 
               className="diagram-container"
               ref={diagramContainerRef}
             >
-              <div
+              <div 
                 ref={diagramRef}
                 className="diagram-content"
                 style={{
@@ -679,4 +646,5 @@ print(f"Results: outer={outer_result}, reader={reader_result}, loop={loop_result
     </div>
   );
 }
+
 export default App;

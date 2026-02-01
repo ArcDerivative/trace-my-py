@@ -8,7 +8,7 @@ trace_data = {}
 prev_vars = {}
 frame_prev_line = {}
 error_message = None
-scope_info = {'lineToScope': {}, 'scopeToLocals': {}}
+scope_info = {'lineToScope': {}, 'scopeToLocals': {}, 'globalDeclarations': {}}
 
 class ScopeAnalyzer(ast.NodeVisitor):
     def __init__(self, source_lines):
@@ -16,6 +16,7 @@ class ScopeAnalyzer(ast.NodeVisitor):
         self.line_to_scope = {}
         self.scope_to_locals = {'global': set()}
         self.scope_ranges = {}  # scope_name -> (start_line, end_line)
+        self.global_declarations = {}  # line -> list of var names
         
     def visit_FunctionDef(self, node):
         func_name = node.name
@@ -59,6 +60,13 @@ class ScopeAnalyzer(ast.NodeVisitor):
             if isinstance(node, ast.Global):
                 for name in node.names:
                     global_vars.add(name)
+                # Record the global declaration line
+                line = node.lineno
+                if line not in self.global_declarations:
+                    self.global_declarations[line] = []
+                for name in node.names:
+                    if name not in self.global_declarations[line]:
+                        self.global_declarations[line].append(name)
         
         # Walk through and find assignments
         for node in ast.walk(func_node):
@@ -109,7 +117,8 @@ class ScopeAnalyzer(ast.NodeVisitor):
         
         return {
             'lineToScope': {str(k): v for k, v in self.line_to_scope.items()},
-            'scopeToLocals': {k: list(v) for k, v in self.scope_to_locals.items()}
+            'scopeToLocals': {k: list(v) for k, v in self.scope_to_locals.items()},
+            'globalDeclarations': {str(k): v for k, v in self.global_declarations.items()}
         }
 
 def analyze_scopes(code):
@@ -119,7 +128,7 @@ def analyze_scopes(code):
         analyzer = ScopeAnalyzer(source_lines)
         return analyzer.analyze(tree)
     except Exception as e:
-        return {'lineToScope': {}, 'scopeToLocals': {}, 'error': str(e)}
+        return {'lineToScope': {}, 'scopeToLocals': {}, 'globalDeclarations': {}, 'error': str(e)}
 
 def is_user_var(name):
     if name.startswith('_'):
