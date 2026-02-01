@@ -242,3 +242,13 @@ html, body {
   rx: 10 !important;
   ry: 10 !important;
 }
+
+/* Disable Monaco's default "same word" highlights */
+.monaco-editor .wordHighlight,
+.monaco-editor .wordHighlightStrong,
+.monaco-editor .wordHighlightText,
+.monaco-editor .selectionHighlight {
+  background-color: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
