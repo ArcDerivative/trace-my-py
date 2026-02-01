@@ -311,8 +311,8 @@ const handleWheel = useCallback((e) => {
     const scaledHeight = contentHeight * zoomLevel;
     
     // Allow panning a bit past the edge
-    const extraX = rect.width * 0.15;
-    const extraY = rect.height * 0.05;
+    const extraX = rect.width * 0.2;
+    const extraY = rect.height * -0.45;
     
     const maxPanX = (scaledWidth / 2) + extraX;
     const maxPanY = (scaledHeight / 2) + extraY;
