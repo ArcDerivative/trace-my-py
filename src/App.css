@@ -12,6 +12,7 @@ body {
   height: 100vh;
   width: 100%;
   padding: 1rem;
+  padding-top: 0.5rem;
   box-sizing: border-box;
   background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
   color: #fff;
@@ -22,7 +23,7 @@ body {
   align-items: center;
   justify-content: center;
   /* gap: 1.5rem; */
-  margin-bottom: 1rem;
+  margin-bottom: 0.25rem;
   position: relative;
 }
 
