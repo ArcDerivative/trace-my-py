@@ -543,21 +543,73 @@ graph TD
               height="100%"
               language={language}
               theme="vs-dark"
-              defaultValue={`x = 10
-print(f"global x starts at {x}")
+              defaultValue={`# Global variables
+count = 0
+x = 100
+name = "global"
 
-def shadow_example():
-    x = 99
-    print(f"local x inside shadow_example: {x}")
+def outer_function():
+    # Local variable that shadows global 'x'
+    x = 50
+    y = 10
+    
+    def inner_function():
+        # Local variable that shadows outer's 'x'
+        x = 25
+        z = 5
+        print(f"inner: x={x}, z={z}")
+        return x + z
+    
+    result = inner_function()
+    x = x + y  # modifies outer's local x
+    print(f"outer: x={x}, y={y}, result={result}")
     return x
 
-def no_shadow_example():
-    print(f"global x accessed inside no_shadow_example: {x}")
-    return x + 1
+def modifier():
+    # Accesses and modifies global 'count'
+    global count
+    count = count + 1
+    step = 10
+    print(f"modifier: count={count}, step={step}")
+    return step
 
-shadow_example()
-no_shadow_example()
-print(f"global x is still {x}")`}
+def reader():
+    # Reads global 'x' without shadowing
+    temp = x + 5
+    print(f"reader: using global x={x}, temp={temp}")
+    return temp
+
+def loop_example():
+    # Loop variable 'i' and accumulator 'total'
+    total = 0
+    for i in range(5):
+        total = total + i
+        x = i * 2  # local 'x' shadows global
+    print(f"loop: total={total}, final i={i}, local x={x}")
+    return total
+
+def multi_assign():
+    # Multiple variables, some shadow, some don't
+    a = 1
+    b = 2
+    name = "local"  # shadows global 'name'
+    a = a + b
+    b = b * 2
+    print(f"multi: a={a}, b={b}, name={name}, global count={count}")
+    return a + b
+
+# Main execution
+print(f"Start: count={count}, x={x}, name={name}")
+
+modifier()
+modifier()
+outer_result = outer_function()
+reader_result = reader()
+loop_result = loop_example()
+multi_result = multi_assign()
+
+print(f"End: count={count}, x={x}, name={name}")
+print(f"Results: outer={outer_result}, reader={reader_result}, loop={loop_result}, multi={multi_result}")`}
               onMount={handleEditorMount}
             />
           </div>
