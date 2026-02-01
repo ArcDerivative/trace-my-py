@@ -13,7 +13,7 @@ def is_user_var(name):
         return False
     if name in (
         'tracer', 'run_with_trace', 'trace_data', 'prev_vars',
-        'is_user_var', 'safe_repr', 'user_code', 'result',
+        'is_user_var', 'safe_repr', 'user_code', '__tracer_result__',
         'json', 'sys', 'ast', 'traceback',
         'get_func_name', 'is_function',
         'capture_changes', 'frame_prev_line', 'error_message'
@@ -161,14 +161,13 @@ export async function runAndTrace(code) {
 
   const wrappedCode = `
 user_code = ${JSON.stringify(processedCode)}
-result = run_with_trace(user_code)
-result
+__tracer_result__ = run_with_trace(user_code)
+__tracer_result__
 `;
 
   const jsonString = await pyodideInstance.runPythonAsync(wrappedCode);
   const parsed = JSON.parse(jsonString);
 
-  // Include error message in output so it's visible in console panel
   let finalOutput = printOutput;
   if (parsed.errorMessage) {
     finalOutput = finalOutput + (finalOutput ? '\n' : '') + '❌ ' + parsed.errorMessage;

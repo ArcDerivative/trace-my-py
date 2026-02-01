@@ -220,3 +220,11 @@ html, body {
   background-color: rgba(250, 204, 21, 0.4) !important;
   border-radius: 2px;
 }
+
+/* Diagram placeholder messages */
+.diagram-placeholder {
+  color: #9ca3af !important;
+  font-size: 1.2rem !important;
+  text-align: center;
+  padding: 2rem;
+}
