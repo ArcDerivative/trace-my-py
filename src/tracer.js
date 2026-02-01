@@ -2,11 +2,124 @@ const TRACER_CODE = `
 import sys
 import json
 import traceback
+import ast
 
 trace_data = {}
 prev_vars = {}
 frame_prev_line = {}
 error_message = None
+scope_info = {'lineToScope': {}, 'scopeToLocals': {}}
+
+class ScopeAnalyzer(ast.NodeVisitor):
+    def __init__(self, source_lines):
+        self.source_lines = source_lines
+        self.line_to_scope = {}
+        self.scope_to_locals = {'global': set()}
+        self.scope_ranges = {}  # scope_name -> (start_line, end_line)
+        
+    def visit_FunctionDef(self, node):
+        func_name = node.name
+        parent_scope = 'global'  # simplified; doesn't handle nested functions perfectly
+        
+        # Add function name to parent scope
+        self.scope_to_locals[parent_scope].add(func_name)
+        
+        # Initialize this function's scope
+        self.scope_to_locals[func_name] = set()
+        
+        # Record the line range for this function
+        start_line = node.lineno
+        end_line = node.end_lineno if hasattr(node, 'end_lineno') else start_line
+        self.scope_ranges[func_name] = (start_line, end_line)
+        
+        # Mark all lines in this function
+        for line in range(start_line, end_line + 1):
+            self.line_to_scope[line] = func_name
+        
+        # Collect local variables
+        self.collect_locals(node, func_name)
+        
+        # Visit nested functions
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, ast.FunctionDef):
+                self.visit_FunctionDef(child)
+    
+    def collect_locals(self, func_node, scope_name):
+        # Parameters
+        for arg in func_node.args.args:
+            self.scope_to_locals[scope_name].add(arg.arg)
+        if func_node.args.vararg:
+            self.scope_to_locals[scope_name].add(func_node.args.vararg.arg)
+        if func_node.args.kwarg:
+            self.scope_to_locals[scope_name].add(func_node.args.kwarg.arg)
+        
+        # Find global declarations first
+        global_vars = set()
+        for node in ast.walk(func_node):
+            if isinstance(node, ast.Global):
+                for name in node.names:
+                    global_vars.add(name)
+        
+        # Walk through and find assignments
+        for node in ast.walk(func_node):
+            # Skip nested function definitions
+            if isinstance(node, ast.FunctionDef) and node is not func_node:
+                continue
+                
+            var_name = None
+            
+            if isinstance(node, ast.Assign):
+                for target in node.targets:
+                    if isinstance(target, ast.Name):
+                        var_name = target.id
+            elif isinstance(node, ast.AugAssign):
+                if isinstance(node.target, ast.Name):
+                    var_name = node.target.id
+            elif isinstance(node, ast.For):
+                if isinstance(node.target, ast.Name):
+                    var_name = node.target.id
+            elif isinstance(node, ast.NamedExpr):
+                if isinstance(node.target, ast.Name):
+                    var_name = node.target.id
+            
+            if var_name and var_name not in global_vars:
+                self.scope_to_locals[scope_name].add(var_name)
+    
+    def analyze(self, tree):
+        total_lines = len(self.source_lines)
+        
+        # Default all lines to global
+        for i in range(1, total_lines + 2):
+            self.line_to_scope[i] = 'global'
+        
+        # Process global-level nodes
+        for node in ast.iter_child_nodes(tree):
+            if isinstance(node, ast.FunctionDef):
+                self.visit_FunctionDef(node)
+            elif isinstance(node, ast.Assign):
+                for target in node.targets:
+                    if isinstance(target, ast.Name):
+                        self.scope_to_locals['global'].add(target.id)
+            elif isinstance(node, ast.AugAssign):
+                if isinstance(node.target, ast.Name):
+                    self.scope_to_locals['global'].add(node.target.id)
+            elif isinstance(node, ast.For):
+                if isinstance(node.target, ast.Name):
+                    self.scope_to_locals['global'].add(node.target.id)
+        
+        return {
+            'lineToScope': {str(k): v for k, v in self.line_to_scope.items()},
+            'scopeToLocals': {k: list(v) for k, v in self.scope_to_locals.items()}
+        }
+
+def analyze_scopes(code):
+    try:
+        tree = ast.parse(code)
+        source_lines = code.split('\\n')
+        analyzer = ScopeAnalyzer(source_lines)
+        return analyzer.analyze(tree)
+    except Exception as e:
+        return {'lineToScope': {}, 'scopeToLocals': {}, 'error': str(e)}
 
 def is_user_var(name):
     if name.startswith('_'):
@@ -16,7 +129,8 @@ def is_user_var(name):
         'is_user_var', 'safe_repr', 'user_code', '__tracer_result__',
         'json', 'sys', 'ast', 'traceback',
         'get_func_name', 'is_function',
-        'capture_changes', 'frame_prev_line', 'error_message'
+        'capture_changes', 'frame_prev_line', 'error_message',
+        'scope_info', 'analyze_scopes', 'ScopeAnalyzer'
     ):
         return False
     return True
@@ -110,11 +224,14 @@ def tracer(frame, event, arg):
     return tracer
 
 def run_with_trace(code):
-    global trace_data, prev_vars, frame_prev_line, error_message
+    global trace_data, prev_vars, frame_prev_line, error_message, scope_info
     trace_data = {}
     prev_vars = {}
     frame_prev_line = {}
     error_message = None
+    
+    # Analyze scopes before running
+    scope_info = analyze_scopes(code)
 
     sys.settrace(tracer)
     try:
@@ -126,7 +243,8 @@ def run_with_trace(code):
     
     return json.dumps({
         'traceData': trace_data,
-        'errorMessage': error_message
+        'errorMessage': error_message,
+        'scopeInfo': scope_info
     })
 `;
 
@@ -176,6 +294,7 @@ __tracer_result__
   return {
     output: finalOutput,
     traceData: parsed.traceData,
-    errorMessage: parsed.errorMessage
+    errorMessage: parsed.errorMessage,
+    scopeInfo: parsed.scopeInfo
   };
 }

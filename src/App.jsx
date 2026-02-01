@@ -38,10 +38,17 @@ const getRawVarName = (scopedVar) => {
   return parts[parts.length - 1];
 };
 
+const getScope = (scopedVar) => {
+  if (!scopedVar) return '';
+  const parts = scopedVar.split('::');
+  return parts[0];
+};
+
 function App() {
   const [language, setLanguage] = useState('python');
   const [output, setOutput] = useState('');
   const [allTraceData, setAllTraceData] = useState({});
+  const [scopeInfo, setScopeInfo] = useState({ lineToScope: {}, scopeToLocals: {} });
   const [selectedVar, setSelectedVar] = useState('');
   const [hoveredVar, setHoveredVar] = useState(null);
   const [errorMessage, setErrorMessage] = useState(null);
@@ -54,10 +61,20 @@ function App() {
   const diagramIdRef = useRef(0);
   const decorationsRef = useRef([]);
   const lineToVarMapRef = useRef({});
+  const traceDataRef = useRef({});
+  const scopeInfoRef = useRef({ lineToScope: {}, scopeToLocals: {} });
 
   const activeVar = hoveredVar || selectedVar;
   const hasTraceData = Object.keys(allTraceData).length > 0;
   const hasSyntaxError = hasRun && errorMessage && !hasTraceData;
+
+  useEffect(() => {
+    traceDataRef.current = allTraceData;
+  }, [allTraceData]);
+
+  useEffect(() => {
+    scopeInfoRef.current = scopeInfo;
+  }, [scopeInfo]);
 
   const buildLineToVarMap = (traceData) => {
     const map = {};
@@ -81,6 +98,48 @@ function App() {
     }
   };
 
+  const invalidateTrace = () => {
+    setAllTraceData({});
+    setScopeInfo({ lineToScope: {}, scopeToLocals: {} });
+    setSelectedVar('');
+    setHoveredVar(null);
+    setErrorMessage(null);
+    setHasRun(false);
+    setOutput('');
+    clearHighlights();
+    lineToVarMapRef.current = {};
+    traceDataRef.current = {};
+    scopeInfoRef.current = { lineToScope: {}, scopeToLocals: {} };
+  };
+
+  /**
+   * Determines if a variable should be highlighted on a given line.
+   * 
+   * For `foo::x` (local variable): highlight only on lines inside `foo`
+   * For `global::x`: highlight on lines in global scope OR in functions that don't shadow `x`
+   */
+  const shouldHighlightOnLine = (scopedVar, lineNum) => {
+    const { lineToScope, scopeToLocals } = scopeInfoRef.current;
+    const varName = getRawVarName(scopedVar);
+    const varScope = getScope(scopedVar);
+    
+    const lineScope = lineToScope[String(lineNum)] || 'global';
+    
+    if (varScope === 'global') {
+      // Global variable: highlight if line is in global scope
+      // OR if line is in a function that doesn't have this var as local
+      if (lineScope === 'global') {
+        return true;
+      }
+      // Check if the function shadows this variable
+      const functionLocals = scopeToLocals[lineScope] || [];
+      return !functionLocals.includes(varName);
+    } else {
+      // Local variable: only highlight if line is in the same function
+      return lineScope === varScope;
+    }
+  };
+
   const highlightVariable = (scopedVar, hoveredLine) => {
     if (!editorRef.current || !monacoRef.current) return;
 
@@ -96,20 +155,30 @@ function App() {
 
     const newDecorations = [];
 
-    newDecorations.push({
-      range: new monaco.Range(hoveredLine, 1, hoveredLine, 1),
-      options: {
-        isWholeLine: true,
-        className: 'hovered-line-highlight'
-      }
-    });
+    // Highlight the hovered line
+    if (hoveredLine) {
+      newDecorations.push({
+        range: new monaco.Range(hoveredLine, 1, hoveredLine, 1),
+        options: {
+          isWholeLine: true,
+          className: 'hovered-line-highlight'
+        }
+      });
+    }
 
+    // Find and highlight variable occurrences based on scope rules
     const text = model.getValue();
     const lines = text.split('\n');
     const regex = new RegExp(`\\b${rawVarName}\\b`, 'g');
 
     lines.forEach((lineContent, index) => {
       const lineNum = index + 1;
+      
+      // Check if we should highlight on this line based on scope
+      if (!shouldHighlightOnLine(scopedVar, lineNum)) {
+        return;
+      }
+      
       let match;
       regex.lastIndex = 0;
       while ((match = regex.exec(lineContent)) !== null) {
@@ -135,7 +204,7 @@ function App() {
 
     if (scopedVar) {
       setHoveredVar(scopedVar);
-      setSelectedVar(scopedVar); // Sync dropdown with hover
+      setSelectedVar(scopedVar);
       highlightVariable(scopedVar, lineNumber);
     } else {
       clearHighlights();
@@ -158,7 +227,31 @@ function App() {
       clearHighlights();
       setHoveredVar(null);
     });
+
+    editor.onDidChangeModelContent(() => {
+      if (hasRun) {
+        invalidateTrace();
+      }
+    });
   };
+
+  useEffect(() => {
+    if (editorRef.current) {
+      const disposable = editorRef.current.onDidChangeModelContent(() => {
+        if (hasRun) {
+          invalidateTrace();
+        }
+      });
+      return () => disposable.dispose();
+    }
+  }, [hasRun]);
+
+  // Re-highlight when selected var changes via dropdown
+  useEffect(() => {
+    if (selectedVar && !hoveredVar) {
+      highlightVariable(selectedVar, null);
+    }
+  }, [selectedVar]);
 
   const mermaidSafe = (value) => {
     if (value == null) return 'null';
@@ -170,9 +263,9 @@ function App() {
   };
 
   const generateMermaid = (trace, scopedVar, error) => {
-    let mermaidStr = `%%{init: {'theme': 'dark', 'themeVariables': { 'primaryColor': '#334155', 'primaryTextColor': '#f8fafc', 'lineColor': '#22d3ee' }}}%%
-  graph TD
-  `;
+    let mermaidStr = `%%{init: {'theme': 'dark', 'themeVariables': { 'primaryColor': '#334155', 'primaryTextColor': '#f8fafc', 'lineColor': '#4a90d9' }}}%%
+graph TD
+`;
     const rawName = getRawVarName(scopedVar);
 
     trace.forEach((v, i) => {
@@ -180,7 +273,6 @@ function App() {
       const scopeLabel = v.function === 'global' ? '' : ` (${v.function})`;
       const label = `${rawName} = ${mermaidSafe(v.value)}${scopeLabel}<br/>line ${v.line}`;
       mermaidStr += `${nodeId}["${label}"]\n`;
-      mermaidStr += `style ${nodeId} rx:10,ry:10\n`;
       if (i < trace.length - 1) {
         mermaidStr += `${nodeId} --> N${i + 1}\n`;
       }
@@ -190,7 +282,6 @@ function App() {
       const lastNode = trace.length > 0 ? `N${trace.length - 1}` : null;
       const errorNode = `ERR`;
       mermaidStr += `${errorNode}["❌ Error<br/>${mermaidSafe(error)}"]\n`;
-      mermaidStr += `style ${errorNode} rx:10,ry:10\n`;
       if (lastNode) {
         mermaidStr += `${lastNode} --> ${errorNode}\n`;
       }
@@ -202,21 +293,18 @@ function App() {
   const renderDiagram = async () => {
     if (!diagramRef.current) return;
 
-    // Not run yet
     if (!hasRun) {
       diagramRef.current.innerHTML =
         '<p class="diagram-placeholder">code must be run :)</p>';
       return;
     }
 
-    // Syntax error (no trace data)
     if (hasSyntaxError) {
       diagramRef.current.innerHTML =
         '<p class="diagram-placeholder">code must be run without syntax errors :))</p>';
       return;
     }
 
-    // No variable selected
     const trace = allTraceData[activeVar] || [];
     if (trace.length === 0 && !errorMessage) {
       diagramRef.current.innerHTML =
@@ -233,9 +321,9 @@ function App() {
         diagramDef
       );
       diagramRef.current.innerHTML = svg;
-      
-      // Round the corners of all rect elements
-      const rects = diagramRef.current.querySelectorAll('rect.basic');
+
+      // Round the corners
+      const rects = diagramRef.current.querySelectorAll('.node rect, .label-container');
       rects.forEach((rect) => {
         rect.setAttribute('rx', '10');
         rect.setAttribute('ry', '10');
@@ -243,13 +331,14 @@ function App() {
     } catch (err) {
       diagramRef.current.innerHTML =
         `<pre style="color:red">Mermaid error:\n${err.message}</pre>`;
-    } 
+    }
   };
 
   const handleRun = async () => {
     setRunning(true);
     setOutput('Running...\n');
     setAllTraceData({});
+    setScopeInfo({ lineToScope: {}, scopeToLocals: {} });
     setSelectedVar('');
     setHoveredVar(null);
     setErrorMessage(null);
@@ -259,9 +348,10 @@ function App() {
 
     try {
       const code = editorRef.current.getValue();
-      const { output: progOutput, traceData, errorMessage } = await runAndTrace(code);
+      const { output: progOutput, traceData, errorMessage, scopeInfo } = await runAndTrace(code);
 
       setAllTraceData(traceData);
+      setScopeInfo(scopeInfo || { lineToScope: {}, scopeToLocals: {} });
       setErrorMessage(errorMessage || null);
       setOutput(progOutput || '(no output)');
       setHasRun(true);
@@ -324,23 +414,21 @@ function App() {
               height="100%"
               language={language}
               theme="vs-dark"
-              defaultValue={`counter = 0
+              defaultValue={`x = 10
+print(f"global x starts at {x}")
 
-def increment():
-    global counter
-    counter += 1
-    step = 1
-    return step
-
-def add_local():
-    x = 10
-    x = x + 5
+def shadow_example():
+    x = 99
+    print(f"local x inside shadow_example: {x}")
     return x
 
-increment()
-increment()
-result = add_local()
-print(f"counter = {counter}, result = {result}")`}
+def no_shadow_example():
+    print(f"global x accessed inside no_shadow_example: {x}")
+    return x + 1
+
+shadow_example()
+no_shadow_example()
+print(f"global x is still {x}")`}
               onMount={handleEditorMount}
             />
           </div>
